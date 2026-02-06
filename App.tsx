@@ -226,7 +226,11 @@ const App: React.FC = () => {
         {/* Extra Info Area */}
         <div className="hidden md:flex items-center space-x-2">
           {currentSong?.key && getKeyInfo() && (
-            <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+            <div 
+              className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 select-none"
+              onDoubleClick={() => setTranspose(0)}
+              title="Double-click to reset key"
+            >
               <span className="text-xs font-bold text-gray-500 ml-2 mr-1">Key:</span>
               <div className="relative">
                 <select
@@ -260,7 +264,11 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 ml-2">
+          <div 
+            className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 ml-2 select-none"
+            onDoubleClick={() => handleUpdateSettings({ fontSize: 18 })}
+            title="Double-click to reset zoom"
+          >
             <span className="text-xs font-bold text-gray-500 ml-2 mr-1">Zoom:</span>
             <div className="relative">
               <select

@@ -93,7 +93,7 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
             const trimmed = line.trim().toLowerCase();
             if (trimmed === '{soc}') {
               inChorusSection = true;
-              return <div key={lIdx} className="font-bold text-gray-800 mb-1">   Chorus:</div>;
+              return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
             }
             if (trimmed === '{eoc}') {
               inChorusSection = false;
@@ -101,7 +101,7 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
             }
 
             if (startsWithChorusLabel && lIdx === 0) {
-              return <div key={lIdx} className="font-bold text-gray-800 mb-1">   Chorus:</div>;
+              return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
             }
 
             const { chordLine, lyricLine } = processLine(line, inChorusSection);
@@ -110,7 +110,7 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
             return (
               <div key={lIdx} className="mb-2 last:mb-0">
                 {settings.showChords && hasChords && (
-                  <div className="chord whitespace-pre font-mono min-h-[1.1em]">{chordLine}</div>
+                  <div className="chord whitespace-pre font-mono min-h-[1.1em] text-blue-600">{chordLine}</div>
                 )}
                 <div className="lyrics whitespace-pre font-mono">{formatLyrics(lyricLine)}</div>
               </div>
