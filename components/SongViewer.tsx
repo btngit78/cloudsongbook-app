@@ -6,13 +6,13 @@ interface SongViewerProps {
   song: Song;
   settings: UserSettings;
   onUpdateSettings: (newSettings: Partial<UserSettings>) => void;
+  transpose: number;
 }
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
 
-const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSettings }) => {
-  const [transpose, setTranspose] = useState(0);
+const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSettings, transpose }) => {
 
   const transposeChord = (chord: string, offset: number): string => {
     if (offset === 0) return chord;
@@ -33,41 +33,33 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
   };
 
   const processLine = (line: string, isChorus: boolean) => {
-    let lyricLine = '';
-    let chordEntries: { pos: number; chord: string }[] = [];
-    
-    let currentPos = 0;
-    const regex = /\[(.*?)\]/g;
-    let match;
-    let lastIndex = 0;
-
-    while ((match = regex.exec(line)) !== null) {
-      const textBefore = line.substring(lastIndex, match.index);
-      lyricLine += textBefore;
-      currentPos += textBefore.length;
-      
-      const chord = transposeChord(match[1], transpose);
-      chordEntries.push({ pos: currentPos, chord });
-      
-      lastIndex = regex.lastIndex;
-    }
-    
-    lyricLine += line.substring(lastIndex);
-
+    const parts = line.split(/(\[.*?\])/g).filter(p => p !== '');
     let chordLine = '';
-    let cursor = 0;
-    chordEntries.forEach(({ pos, chord }) => {
-      const spacesNeeded = pos - cursor;
-      if (spacesNeeded > 0) {
-        chordLine += ' '.repeat(spacesNeeded);
-      } else if (spacesNeeded < 0 && chordLine.length > 0) {
-        chordLine += ' ';
+    let lyricLine = '';
+
+    parts.forEach(part => {
+      if (part.startsWith('[') && part.endsWith(']')) {
+        const chordRaw = part.slice(1, -1);
+        const chord = transposeChord(chordRaw, transpose);
+        
+        // Synchronize lengths so chord aligns with current text position
+        const maxLen = Math.max(chordLine.length, lyricLine.length);
+        chordLine = chordLine.padEnd(maxLen, ' ');
+        lyricLine = lyricLine.padEnd(maxLen, ' ');
+
+        // Ensure separation: if chordLine doesn't end in space, add one to both lines
+        if (chordLine.length > 0 && !chordLine.endsWith(' ')) {
+          chordLine += ' ';
+          lyricLine += ' ';
+        }
+
+        chordLine += chord;
+      } else {
+        lyricLine += part;
       }
-      chordLine += chord;
-      cursor = chordLine.length;
     });
 
-    const indent = isChorus ? '  ' : '';
+    const indent = isChorus ? '   ' : '';
 
     return {
       chordLine: indent + chordLine,
@@ -75,26 +67,52 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
     };
   };
 
+  const formatLyrics = (text: string) => {
+    const parts = text.split(/(\([^)]*\))/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('(') && part.endsWith(')')) {
+        return <span key={index} className="text-red-600">{part}</span>;
+      }
+      return part;
+    });
+  };
+
   const renderContent = (body: string) => {
     const blocks = body.split(/\n\s*\n/);
     
     return blocks.map((block, bIdx) => {
       const lines = block.split('\n');
-      const isChorus = lines[0].toLowerCase().trim().startsWith('chorus') || 
-                       lines[0].toLowerCase().trim().startsWith('[chorus]');
+      const startsWithChorusLabel = lines[0].toLowerCase().trim().startsWith('chorus') || 
+                                    lines[0].toLowerCase().trim().startsWith('[chorus]');
+      
+      let inChorusSection = startsWithChorusLabel;
 
       return (
         <div key={bIdx} className="mb-8">
           {lines.map((line, lIdx) => {
-            const { chordLine, lyricLine } = processLine(line, isChorus);
+            const trimmed = line.trim().toLowerCase();
+            if (trimmed === '{soc}') {
+              inChorusSection = true;
+              return <div key={lIdx} className="font-bold text-gray-800 mb-1">   Chorus:</div>;
+            }
+            if (trimmed === '{eoc}') {
+              inChorusSection = false;
+              return null;
+            }
+
+            if (startsWithChorusLabel && lIdx === 0) {
+              return <div key={lIdx} className="font-bold text-gray-800 mb-1">   Chorus:</div>;
+            }
+
+            const { chordLine, lyricLine } = processLine(line, inChorusSection);
             const hasChords = chordLine.trim().length > 0;
 
             return (
               <div key={lIdx} className="mb-2 last:mb-0">
                 {settings.showChords && hasChords && (
-                  <div className="chord whitespace-pre min-h-[1.2em]">{chordLine}</div>
+                  <div className="chord whitespace-pre font-mono min-h-[1.1em]">{chordLine}</div>
                 )}
-                <div className="lyrics whitespace-pre font-mono">{lyricLine}</div>
+                <div className="lyrics whitespace-pre font-mono">{formatLyrics(lyricLine)}</div>
               </div>
             );
           })}
@@ -103,95 +121,19 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
     });
   };
 
-  const handleZoom = (delta: number) => {
-    const newSize = Math.max(12, Math.min(48, settings.fontSize + delta));
-    onUpdateSettings({ fontSize: newSize });
-  };
-
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-8 animate-fadeIn relative pb-24">
-      {/* Meta Bar */}
-      <div className="flex flex-wrap gap-4 mb-6 items-center justify-between text-xs font-bold uppercase tracking-widest text-gray-400">
-        <div className="flex gap-4">
-          {song.key && (
-            <div className="flex items-center space-x-1.5 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg border border-blue-100">
-              <i className="fa-solid fa-music"></i>
-              <span>Key: {song.key}</span>
-            </div>
-          )}
-          {song.tempo && (
-            <div className="flex items-center space-x-1.5 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg border border-orange-100">
-              <i className="fa-solid fa-gauge-high"></i>
-              <span>BPM: {song.tempo}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center space-x-1.5 bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg">
-          <i className="fa-solid fa-language"></i>
-          <span>{song.language}</span>
-        </div>
-      </div>
-
-      {/* Controls Bar */}
-      {!song.isPdf && (
-        <div className="sticky top-20 z-20 mb-8 flex flex-wrap gap-2 justify-center">
-          <div className="bg-white/80 backdrop-blur-md border border-gray-200 p-1.5 rounded-full shadow-lg flex items-center space-x-1">
-            <span className="text-[10px] font-bold text-gray-400 px-2 uppercase tracking-tight">Transpose</span>
-            <button 
-              onClick={() => setTranspose(prev => prev - 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
-            >
-              <i className="fa-solid fa-minus text-xs"></i>
-            </button>
-            <span className="w-8 text-center font-mono font-bold text-blue-600 text-sm">
-              {transpose > 0 ? `+${transpose}` : transpose}
-            </span>
-            <button 
-              onClick={() => setTranspose(prev => prev + 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
-            >
-              <i className="fa-solid fa-plus text-xs"></i>
-            </button>
-            <button 
-              onClick={() => setTranspose(0)}
-              className="text-[10px] font-bold text-blue-500 px-2 hover:underline"
-            >
-              Reset
-            </button>
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-md border border-gray-200 p-1.5 rounded-full shadow-lg flex items-center space-x-1">
-            <span className="text-[10px] font-bold text-gray-400 px-2 uppercase tracking-tight">Zoom</span>
-            <button 
-              onClick={() => handleZoom(-2)}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
-            >
-              <i className="fa-solid fa-magnifying-glass-minus text-xs"></i>
-            </button>
-            <span className="w-8 text-center font-mono font-bold text-gray-700 text-sm">
-              {settings.fontSize}
-            </span>
-            <button 
-              onClick={() => handleZoom(2)}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
-            >
-              <i className="fa-solid fa-magnifying-glass-plus text-xs"></i>
-            </button>
-          </div>
-        </div>
-      )}
-
+    <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
       <header className="mb-4 pb-2">
         <p 
           className="text-gray-500 italic font-medium leading-none"
           style={{ fontSize: `${settings.fontSize * 0.66}px` }}
         >
-          By {song.author || 'Unknown'}
+          By {song.author || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
         </p>
       </header>
       
       <div 
-        className={`bg-white rounded-3xl shadow-sm border border-gray-100 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-6 md:p-12 overflow-x-auto'}`}
+        className={`bg-white rounded-3xl shadow-sm border border-gray-100 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
         style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
       >
         {song.isPdf && song.pdfData ? (

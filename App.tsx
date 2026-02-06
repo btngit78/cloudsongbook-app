@@ -7,6 +7,9 @@ import { geminiService } from './services/geminiService';
 import SongViewer from './components/SongViewer';
 import SongForm from './components/SongForm';
 
+const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
@@ -16,6 +19,7 @@ const App: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Song[]>([]);
+  const [transpose, setTranspose] = useState(0);
 
   // Initialize App
   useEffect(() => {
@@ -53,6 +57,7 @@ const App: React.FC = () => {
     if (song) {
       setCurrentSong(song);
       setView('SONG_VIEW');
+      setTranspose(0);
       setSearchOpen(false);
       setSearchQuery('');
     }
@@ -99,6 +104,35 @@ const App: React.FC = () => {
       );
       setSearchResults(filtered);
     }
+  };
+
+  const getKeyInfo = () => {
+    if (!currentSong?.key) return null;
+    
+    let root = currentSong.key;
+    let suffix = '';
+    
+    const match = currentSong.key.match(/^([A-G][#b]?)(.*)/);
+    if (match) {
+      root = match[1];
+      suffix = match[2];
+    }
+
+    if (FLAT_MAP[root]) root = FLAT_MAP[root];
+    const originalIndex = CHROMATIC_SCALE.indexOf(root);
+    
+    if (originalIndex === -1) return null;
+
+    let currentIndex = (originalIndex + transpose) % 12;
+    if (currentIndex < 0) currentIndex += 12;
+
+    return {
+      originalIndex,
+      currentIndex,
+      currentKey: CHROMATIC_SCALE[currentIndex] + suffix,
+      suffix,
+      root
+    };
   };
 
   if (!user) {
@@ -190,9 +224,65 @@ const App: React.FC = () => {
         </div>
 
         {/* Extra Info Area */}
-        <div className="hidden md:flex items-center space-x-4 text-xs font-medium text-gray-400">
-          <span className="bg-gray-100 px-2 py-1 rounded">KEY: G</span>
-          <span className="bg-gray-100 px-2 py-1 rounded">BPM: 120</span>
+        <div className="hidden md:flex items-center space-x-2">
+          {currentSong?.key && getKeyInfo() && (
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+              <span className="text-xs font-bold text-gray-500 ml-2 mr-1">Key:</span>
+              <div className="relative">
+                <select
+                  className="appearance-none bg-transparent font-bold text-gray-700 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                  value={getKeyInfo()!.currentKey}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Remove suffix to find root
+                    const selectedRoot = val.replace(getKeyInfo()!.suffix, '');
+                    const targetIndex = CHROMATIC_SCALE.indexOf(selectedRoot);
+                    const diff = targetIndex - getKeyInfo()!.originalIndex;
+                    setTranspose(diff);
+                  }}
+                >
+                  {CHROMATIC_SCALE.map((note) => (
+                    <option key={note} value={note + getKeyInfo()!.suffix}>
+                      {note + getKeyInfo()!.suffix}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex flex-col ml-1 border-l border-gray-300 pl-1">
+                <button onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+                  <i className="fa-solid fa-caret-up text-[10px]"></i>
+                </button>
+                <button onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+                  <i className="fa-solid fa-caret-down text-[10px]"></i>
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 ml-2">
+            <span className="text-xs font-bold text-gray-500 ml-2 mr-1">Zoom:</span>
+            <div className="relative">
+              <select
+                className="appearance-none bg-transparent font-bold text-gray-700 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                value={user.settings.fontSize}
+                onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
+              >
+                {[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48].map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex flex-col ml-1 border-l border-gray-300 pl-1">
+              <button onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+                <i className="fa-solid fa-caret-up text-[10px]"></i>
+              </button>
+              <button onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+                <i className="fa-solid fa-caret-down text-[10px]"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -203,6 +293,7 @@ const App: React.FC = () => {
             song={currentSong} 
             settings={user.settings} 
             onUpdateSettings={handleUpdateSettings}
+            transpose={transpose}
           />
         )}
         {view === 'SONG_FORM' && (
