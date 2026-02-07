@@ -16,20 +16,23 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
 
   const transposeChord = (chord: string, offset: number): string => {
     if (offset === 0) return chord;
-    const match = chord.match(/^([A-G][#b]?)(.*)/);
-    if (!match) return chord;
+    
+    return chord.split('/').map(part => {
+      const match = part.match(/^([A-G][#b]?)(.*)/);
+      if (!match) return part;
 
-    let root = match[1];
-    const suffix = match[2];
-    if (FLAT_MAP[root]) root = FLAT_MAP[root];
+      let root = match[1];
+      const suffix = match[2];
+      if (FLAT_MAP[root]) root = FLAT_MAP[root];
 
-    const index = CHROMATIC_SCALE.indexOf(root);
-    if (index === -1) return chord;
+      const index = CHROMATIC_SCALE.indexOf(root);
+      if (index === -1) return part;
 
-    let newIndex = (index + offset) % 12;
-    if (newIndex < 0) newIndex += 12;
+      let newIndex = (index + offset) % 12;
+      if (newIndex < 0) newIndex += 12;
 
-    return CHROMATIC_SCALE[newIndex] + suffix;
+      return CHROMATIC_SCALE[newIndex] + suffix;
+    }).join('/');
   };
 
   const processLine = (line: string, isChorus: boolean) => {
