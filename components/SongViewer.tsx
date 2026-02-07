@@ -33,6 +33,15 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
   };
 
   const processLine = (line: string, isChorus: boolean) => {
+    if (!settings.showChords) {
+      const lyricLine = line.replace(/\[.*?\]/g, '').trim();
+      const indent = isChorus ? '   ' : '';
+      return {
+        chordLine: '',
+        lyricLine: indent + lyricLine
+      };
+    }
+
     const parts = line.split(/(\[.*?\])/g).filter(p => p !== '');
     let chordLine = '';
     let lyricLine = '';
@@ -83,34 +92,31 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
     return blocks.map((block, bIdx) => {
       const lines = block.split('\n');
       const startsWithChorusLabel = lines[0].toLowerCase().trim().startsWith('chorus') || 
-                                    lines[0].toLowerCase().trim().startsWith('[chorus]');
+                                    lines[0].toLowerCase().trim().startsWith('{soc}');
       
       let inChorusSection = startsWithChorusLabel;
+      let mbClass = 'mb-2';
 
       return (
-        <div key={bIdx} className="mb-8">
+        <div key={bIdx} className={`${mbClass} last:mb-6`}>
           {lines.map((line, lIdx) => {
             const trimmed = line.trim().toLowerCase();
-            if (trimmed === '{soc}') {
-              inChorusSection = true;
-              return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
-            }
             if (trimmed === '{eoc}') {
               inChorusSection = false;
               return null;
             }
-
-            if (startsWithChorusLabel && lIdx === 0) {
+           
+            if (lIdx === 0 && startsWithChorusLabel) {
               return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
-            }
+            } 
 
             const { chordLine, lyricLine } = processLine(line, inChorusSection);
             const hasChords = chordLine.trim().length > 0;
 
             return (
-              <div key={lIdx} className="mb-2 last:mb-0">
+              <div key={lIdx} className="mb-0.5 last:mb-6">
                 {settings.showChords && hasChords && (
-                  <div className="chord whitespace-pre font-mono min-h-[1.1em] text-blue-600">{chordLine}</div>
+                  <div className="chord whitespace-pre font-mono min-h-[1em] leading-none text-blue-600 mt-0.5">{chordLine}</div>
                 )}
                 <div className="lyrics whitespace-pre font-mono">{formatLyrics(lyricLine)}</div>
               </div>
