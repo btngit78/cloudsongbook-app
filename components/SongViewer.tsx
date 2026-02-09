@@ -1,18 +1,30 @@
 
 import React, { useState } from 'react';
 import { Song, UserSettings } from '../types';
+import { SetList } from '../types';
 
 interface SongViewerProps {
   song: Song;
   settings: UserSettings;
   onUpdateSettings: (newSettings: Partial<UserSettings>) => void;
   transpose: number;
+  activeSetlist?: SetList | null;
+  activeSetlistIndex?: number;
+  onNextSong?: () => void;
+  onPrevSong?: () => void;
+  onSetlistJump?: (index: number) => void;
+  onExitSetlist?: () => void;
+  allSongs?: Song[];
 }
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
 
-const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSettings, transpose }) => {
+const SongViewer: React.FC<SongViewerProps> = ({ 
+  song, settings, onUpdateSettings, transpose,
+  activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs
+}) => {
+  const [hudOpen, setHudOpen] = useState(false);
 
   const transposeChord = (chord: string, offset: number): string => {
     if (offset === 0) return chord;
@@ -135,13 +147,75 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
 
   return (
     <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
-      <header className="mb-4 pb-2">
-        <p 
-          className="text-gray-500 italic font-medium leading-none"
-          style={{ fontSize: `${settings.fontSize * 0.66}px` }}
-        >
-          By {song.author || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
-        </p>
+      <header className="mb-4 pb-2 flex justify-between items-end">
+        <div className="text-left">
+          <p 
+            className="text-gray-500 italic font-medium leading-none"
+            style={{ fontSize: `${settings.fontSize * 0.66}px` }}
+          >
+            By {song.author || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
+          </p>
+        </div>
+
+        {/* Setlist HUD */}
+        {activeSetlist && (
+          <div className="relative z-20">
+            <div className="flex items-center bg-gray-100 text-gray-900 rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <button 
+                onClick={onPrevSong}
+                disabled={activeSetlistIndex <= 0}
+                className="p-2 hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              >
+                <i className="fa-solid fa-backward-step"></i>
+              </button>
+              
+              <button 
+                onClick={() => setHudOpen(!hudOpen)}
+                className="px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"
+              >
+                <span className="text-gray-500 truncate max-w-[150px]">{activeSetlist.name}:</span>
+                <span className="text-gray-900 text-sm">{activeSetlistIndex + 1}/{activeSetlist.songIds.length}</span>
+              </button>
+
+              <button 
+                onClick={onNextSong}
+                disabled={activeSetlistIndex >= activeSetlist.songIds.length - 1}
+                className="p-2 hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              >
+                <i className="fa-solid fa-forward-step"></i>
+              </button>
+
+              <div className="w-px h-5 bg-gray-300 mx-1"></div>
+
+              <button 
+                onClick={onExitSetlist}
+                className="p-2 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                title="Exit Setlist"
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Dropdown List */}
+            {hudOpen && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden max-h-64 overflow-y-auto">
+                {activeSetlist.songIds.map((sid, idx) => {
+                  const sTitle = allSongs?.find(s => s.id === sid)?.title || 'Unknown';
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => { onSetlistJump?.(idx); setHudOpen(false); }}
+                      className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 hover:bg-blue-50 flex items-center space-x-3 ${idx === activeSetlistIndex ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-700'}`}
+                    >
+                      <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                      <span className="truncate">{sTitle}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </header>
       
       <div 

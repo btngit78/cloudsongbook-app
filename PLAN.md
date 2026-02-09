@@ -5,8 +5,8 @@
 - **Frontend**: React 18+ (SPA) with TypeScript.
 - **Styling**: Tailwind CSS for responsive, mobile-first design.
 - **State Management**: React Context/Hooks for app state; `localStorage` for the 40-song LRU (Least Recently Used) cache.
-- **Backend Integration**: Service-oriented architecture using a `dbService` (mocking Firestore behavior) and `geminiService` for advanced AI search.
-- **Deployment**: Optimized for Google Cloud/Firebase Hosting.
+- **Backend Integration**: Service-oriented architecture using a `dbService` (mocking Firestore behavior) and `geminiService` (requires `GEMINI_API_KEY`) for advanced AI search.
+- **Deployment**: Optimized for Google Cloud/Firebase Hosting and AI Studio.
 
 ## 2. User Roles & Permissions
 - **Admin**: Full CRUD on songs/setlists, user management.
@@ -20,7 +20,7 @@
 
 ### B. Song Management
 - **Song Object**: `{ id, title, author, body, createdAt, lastUsedAt }`.
-- **Set-List Object**: `{ id, name, songIds, ownerId }`.
+- **Set-List Object**: `{ id, name, songIds, createdAt }`.
 - **View Layer**: Chord-aware text rendering with transpose/zoom capabilities.
 
 ### C. Search & Discovery

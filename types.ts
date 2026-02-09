@@ -40,6 +40,8 @@ export interface SetList {
   name: string;
   songIds: string[];
   ownerId: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type ViewState = 'SONG_VIEW' | 'SONG_FORM' | 'SETLIST_LIST' | 'SETLIST_FORM' | 'RECENT_SONGS' | 'ADVANCED_SEARCH' | 'SETTINGS';

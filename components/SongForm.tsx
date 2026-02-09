@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
 
 interface SongFormProps {
@@ -45,8 +45,10 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      setFormData({ ...formData, pdfData: e.target?.result as string });
-      setError(null);
+      if (e.target?.result) {
+        setFormData({ ...formData, pdfData: e.target.result as string });
+        setError(null);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -65,7 +67,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFile(e.dataTransfer.files[0]);
     }
   };
@@ -221,7 +223,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
             onChange={e => setFormData({ ...formData, isPdf: e.target.checked })}
           />
           <label htmlFor="pdf-check" className="text-sm font-bold text-blue-900 select-none cursor-pointer">
-            This song uses a PDF file instead of ChordPro text
+            This song uses a PDF file instead of ChordPro-like text
           </label>
         </div>
 
@@ -264,7 +266,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
             </div>
           ) : (
             <div className="space-y-2">
-              <label className="block text-sm font-bold text-gray-700">Lyrics & Chords (ChordPro format)</label>
+              <label className="block text-sm font-bold text-gray-700">Lyrics & Chords (ChordPro-like format)</label>
               <textarea
                 rows={15}
                 required={!formData.isPdf}

@@ -1,12 +1,14 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User, Song, UserRole, ViewState, UserSettings } from './types';
+import { SetList } from './types';
 import { MOCK_USER, MOCK_SONGS } from './constants';
 import { dbService } from './services/dbService';
 import { geminiService } from './services/geminiService';
 import SongViewer from './components/SongViewer';
 import SongForm from './components/SongForm';
 import SettingsView from './components/SettingsView';
+import SetlistManager from './components/SetlistManager';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -15,13 +17,18 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [allSongs, setAllSongs] = useState<Song[]>([]);
-  const [view, setView] = useState<ViewState>('SONG_VIEW');
+  const [view, setView] = useState<ViewState | 'SETLIST_MANAGER'>('SONG_VIEW');
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [transpose, setTranspose] = useState(0);
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
+
+  // Setlist State
+  const [setlists, setSetlists] = useState<SetList[]>([]);
+  const [activeSetlist, setActiveSetlist] = useState<SetList | null>(null);
+  const [activeSetlistIndex, setActiveSetlistIndex] = useState(0);
 
   // Initialize App
   useEffect(() => {
@@ -39,6 +46,10 @@ const App: React.FC = () => {
       } else if (songs.length > 0) {
         setCurrentSong(songs[0]);
       }
+
+      // Load Setlists from LocalStorage (Mock DB)
+      const storedSetlists = localStorage.getItem('cloudsong_setlists');
+      if (storedSetlists) setSetlists(JSON.parse(storedSetlists));
     };
     init();
   }, []);
@@ -62,6 +73,7 @@ const App: React.FC = () => {
       setTranspose(0);
       setSearchOpen(false);
       setSearchQuery('');
+      // Note: We don't clear activeSetlist here to allow "browsing" while in a set, unless we want strict mode.
     }
   };
 
@@ -108,7 +120,7 @@ const App: React.FC = () => {
     }
   };
 
-  const getKeyInfo = () => {
+  const keyInfo = useMemo(() => {
     if (!currentSong?.key) return null;
     
     let root = currentSong.key;
@@ -135,6 +147,56 @@ const App: React.FC = () => {
       suffix,
       root
     };
+  }, [currentSong, transpose]);
+
+  // Setlist Handlers
+  const handleSaveSetlist = (setlist: SetList) => {
+    const existingIdx = setlists.findIndex(s => s.id === setlist.id);
+    let newSetlists;
+    if (existingIdx >= 0) {
+      newSetlists = [...setlists];
+      newSetlists[existingIdx] = setlist;
+    } else {
+      newSetlists = [...setlists, setlist];
+    }
+    setSetlists(newSetlists);
+    localStorage.setItem('cloudsong_setlists', JSON.stringify(newSetlists));
+  };
+
+  const handleDeleteSetlist = (id: string) => {
+    const newSetlists = setlists.filter(s => s.id !== id);
+    setSetlists(newSetlists);
+    localStorage.setItem('cloudsong_setlists', JSON.stringify(newSetlists));
+    if (activeSetlist?.id === id) setActiveSetlist(null);
+  };
+
+  const handlePlaySetlist = (setlist: SetList) => {
+    setActiveSetlist(setlist);
+    setActiveSetlistIndex(0);
+    if (setlist.songIds.length > 0) {
+      selectSong(setlist.songIds[0]);
+    }
+    setView('SONG_VIEW');
+    setMenuOpen(false);
+  };
+
+  const handleSetlistNav = (direction: 'next' | 'prev' | number) => {
+    if (!activeSetlist) return;
+    let newIndex = activeSetlistIndex;
+    
+    if (direction === 'next') newIndex++;
+    else if (direction === 'prev') newIndex--;
+    else newIndex = direction;
+
+    if (newIndex >= 0 && newIndex < activeSetlist.songIds.length) {
+      setActiveSetlistIndex(newIndex);
+      selectSong(activeSetlist.songIds[newIndex]);
+    }
+  };
+
+  const handleExitSetlist = () => {
+    setActiveSetlist(null);
+    setActiveSetlistIndex(0);
   };
 
   if (!user) {
@@ -227,7 +289,7 @@ const App: React.FC = () => {
 
         {/* Extra Info Area */}
         <div className="hidden md:flex items-center space-x-2">
-          {currentSong?.key && getKeyInfo() && (
+          {currentSong?.key && keyInfo && (
             <div 
               className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 select-none"
               onDoubleClick={() => setTranspose(0)}
@@ -237,19 +299,19 @@ const App: React.FC = () => {
               <div className="relative">
                 <select
                   className="appearance-none bg-transparent font-bold text-gray-700 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
-                  value={getKeyInfo()!.currentKey}
+                  value={keyInfo.currentKey}
                   onChange={(e) => {
                     const val = e.target.value;
                     // Remove suffix to find root
-                    const selectedRoot = val.replace(getKeyInfo()!.suffix, '');
+                    const selectedRoot = val.replace(keyInfo!.suffix, '');
                     const targetIndex = CHROMATIC_SCALE.indexOf(selectedRoot);
-                    const diff = targetIndex - getKeyInfo()!.originalIndex;
+                    const diff = targetIndex - keyInfo!.originalIndex;
                     setTranspose(diff);
                   }}
                 >
                   {CHROMATIC_SCALE.map((note) => (
-                    <option key={note} value={note + getKeyInfo()!.suffix}>
-                      {note + getKeyInfo()!.suffix}
+                    <option key={note} value={note + keyInfo.suffix}>
+                      {note + keyInfo.suffix}
                     </option>
                   ))}
                 </select>
@@ -304,6 +366,13 @@ const App: React.FC = () => {
             settings={user.settings} 
             onUpdateSettings={handleUpdateSettings}
             transpose={transpose}
+            activeSetlist={activeSetlist}
+            activeSetlistIndex={activeSetlistIndex}
+            onNextSong={() => handleSetlistNav('next')}
+            onPrevSong={() => handleSetlistNav('prev')}
+            onSetlistJump={(idx) => handleSetlistNav(idx)}
+            onExitSetlist={handleExitSetlist}
+            allSongs={allSongs}
           />
         )}
         {view === 'SONG_FORM' && (
@@ -332,6 +401,16 @@ const App: React.FC = () => {
               ))}
             </div>
           </div>
+        )}
+        {view === 'SETLIST_MANAGER' && (
+          <SetlistManager
+            setlists={setlists}
+            allSongs={allSongs}
+            onSave={handleSaveSetlist}
+            onDelete={handleDeleteSetlist}
+            onPlay={handlePlaySetlist}
+            onClose={() => setView('SONG_VIEW')}
+          />
         )}
         {view === 'SETTINGS' && (
           <SettingsView 
@@ -390,7 +469,19 @@ const App: React.FC = () => {
               <div className="my-4 border-t border-gray-100" />
               
               <p className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Playlists</p>
-              <button className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors">
+              {activeSetlist && (
+                <button 
+                  onClick={() => { handleExitSetlist(); setMenuOpen(false); }}
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors mb-2"
+                >
+                  <i className="fa-solid fa-circle-stop w-6"></i>
+                  <span className="font-medium">Exit Current Set</span>
+                </button>
+              )}
+              <button 
+                onClick={() => { setView('SETLIST_MANAGER'); setMenuOpen(false); }}
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+              >
                 <i className="fa-solid fa-list-ul w-6"></i>
                 <span className="font-medium">My Set-Lists</span>
               </button>
