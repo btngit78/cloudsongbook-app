@@ -109,9 +109,12 @@ const SongViewer: React.FC<SongViewerProps> = ({ song, settings, onUpdateSetting
               return null;
             }
            
-            if (lIdx === 0 && startsWithChorusLabel) {
-              return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
-            } 
+            if (lIdx === 0) {
+              if (startsWithChorusLabel)        // Chorus label (e.g. "Chorus:", "{soc}") needs indentation
+                return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
+              else if (trimmed.endsWith(':'))   // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
+                return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">{line.trim()}</div>;
+            }
 
             const { chordLine, lyricLine } = processLine(line, inChorusSection);
             const hasChords = chordLine.trim().length > 0;

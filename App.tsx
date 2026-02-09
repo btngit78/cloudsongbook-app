@@ -6,6 +6,7 @@ import { dbService } from './services/dbService';
 import { geminiService } from './services/geminiService';
 import SongViewer from './components/SongViewer';
 import SongForm from './components/SongForm';
+import SettingsView from './components/SettingsView';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -20,6 +21,7 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [transpose, setTranspose] = useState(0);
+  const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
 
   // Initialize App
   useEffect(() => {
@@ -306,6 +308,7 @@ const App: React.FC = () => {
         )}
         {view === 'SONG_FORM' && (
           <SongForm 
+            song={songToEdit}
             onSave={handleSaveSong} 
             onCancel={() => setView('SONG_VIEW')} 
           />
@@ -331,33 +334,14 @@ const App: React.FC = () => {
           </div>
         )}
         {view === 'SETTINGS' && (
-          <div className="max-w-xl mx-auto p-6 bg-white rounded-2xl shadow-sm border border-gray-100 mt-8">
-            <h2 className="text-2xl font-bold mb-6">User Settings</h2>
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Font Size ({user.settings.fontSize}px)</label>
-                <input 
-                  type="range" min="12" max="32" 
-                  value={user.settings.fontSize}
-                  onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" 
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Show Chords</span>
-                <button 
-                  onClick={() => handleUpdateSettings({ showChords: !user.settings.showChords })}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${user.settings.showChords ? 'bg-blue-600' : 'bg-gray-300'}`}
-                >
-                  <div className={`absolute top-1 bg-white w-4 h-4 rounded-full transition-transform ${user.settings.showChords ? 'left-7' : 'left-1'}`} />
-                </button>
-              </div>
-              <div className="pt-4 border-t border-gray-100">
-                <p className="text-xs text-gray-400">User ID: {user.id}</p>
-                <p className="text-xs text-gray-400">Account Type: <span className="uppercase font-bold text-blue-600">{user.role}</span></p>
-              </div>
-            </div>
-          </div>
+          <SettingsView 
+            user={user}
+            onSave={(newSettings) => {
+              handleUpdateSettings(newSettings);
+              setView('SONG_VIEW');
+            }}
+            onCancel={() => setView('SONG_VIEW')}
+          />
         )}
       </main>
 
@@ -382,14 +366,14 @@ const App: React.FC = () => {
             <nav className="p-4 space-y-1">
               <p className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Song Management</p>
               <button 
-                onClick={() => { setView('SONG_FORM'); setMenuOpen(false); }}
+                onClick={() => { setSongToEdit(undefined); setView('SONG_FORM'); setMenuOpen(false); }}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-plus w-6"></i>
                 <span className="font-medium">Add New Song</span>
               </button>
               <button 
-                onClick={() => { setView('SONG_FORM'); setMenuOpen(false); }}
+                onClick={() => { setSongToEdit(currentSong || undefined); setView('SONG_FORM'); setMenuOpen(false); }}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-pen-to-square w-6"></i>

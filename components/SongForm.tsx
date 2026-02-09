@@ -71,17 +71,16 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   };
 
   const validateKeywords = (val: string) => {
-    return val.split(' ').every(word => /^[a-zA-Z0-9-]*$/.test(word));
+    return val.split(' ').every(word => /^[\p{L}\p{N}-]*$/u.test(word));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = () => {
     if (!formData.title || formData.title.length > 80) {
       setError('Title is required and must be max 80 characters.');
       return;
     }
     if (formData.keywords && !validateKeywords(formData.keywords)) {
-      setError('Keywords must be alpha-numeric and hyphen only, separated by spaces.');
+      setError('Keywords must be alpha-numeric (international allowed) and hyphen only, separated by spaces.');
       return;
     }
     if (formData.isPdf && !formData.pdfData) {
@@ -91,11 +90,34 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     onSave(formData);
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSave();
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white rounded-3xl shadow-xl mt-8 mb-12">
-      <h2 className="text-3xl font-extrabold text-gray-900 mb-8 border-b pb-4">
-        {song ? 'Edit Song' : 'Add New Song'}
-      </h2>
+      <div className="flex items-center justify-between mb-8 border-b pb-4">
+        <h2 className="text-3xl font-extrabold text-gray-900">
+          {song ? 'Edit Song' : 'Add New Song'}
+        </h2>
+        <div className="flex space-x-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
+          >
+            Save
+          </button>
+        </div>
+      </div>
       
       {error && (
         <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm rounded-r-lg">
@@ -185,7 +207,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               value={formData.keywords}
               onChange={e => setFormData({ ...formData, keywords: e.target.value })}
             />
-            <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold tracking-wider">Alpha-numeric and hyphen only, space separated</p>
+            <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold tracking-wider">Alpha-numeric (intl allowed) and hyphen only, space separated</p>
           </div>
         </div>
 
@@ -267,7 +289,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
             type="submit"
             className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-200 hover:-translate-y-0.5 transition-all"
           >
-            {song ? 'Update Song' : 'Create Song'}
+            Save
           </button>
         </div>
       </form>
