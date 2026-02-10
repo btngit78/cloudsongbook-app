@@ -206,7 +206,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-3xl font-extrabold text-gray-900">My Setlists</h2>
+        <h2 className="text-2xl font-bold text-gray-900">My Setlists</h2>
         <div className="flex space-x-3">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Back</button>
           <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg flex items-center space-x-2">

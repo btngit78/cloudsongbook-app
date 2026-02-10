@@ -103,6 +103,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
 
   const renderContent = (body: string) => {
     const blocks = body.split(/\n\s*\n/);
+    let chorusCount = 0;
     
     return blocks.map((block, bIdx) => {
       const lines = block.split('\n');
@@ -111,9 +112,11 @@ const SongViewer: React.FC<SongViewerProps> = ({
       
       let inChorusSection = startsWithChorusLabel;
       let mbClass = 'mb-2';
+      
+      const sectionId = startsWithChorusLabel ? `chorus-${chorusCount++}` : undefined;
 
       return (
-        <div key={bIdx} className={`${mbClass} last:mb-6`}>
+        <div key={bIdx} id={sectionId} className={`${mbClass} last:mb-6`}>
           {lines.map((line, lIdx) => {
             const trimmed = line.trim().toLowerCase();
             if (trimmed === '{eoc}') {

@@ -100,7 +100,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white rounded-3xl shadow-xl mt-8 mb-12">
       <div className="flex items-center justify-between mb-8 border-b pb-4">
-        <h2 className="text-3xl font-extrabold text-gray-900">
+        <h2 className="text-2xl font-bold text-gray-900">
           {song ? 'Edit Song' : 'Add New Song'}
         </h2>
         <div className="flex space-x-3">

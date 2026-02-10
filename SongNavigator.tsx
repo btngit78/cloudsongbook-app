@@ -19,7 +19,7 @@ const SongNavigator: React.FC<SongNavigatorProps> = ({
     <div className="fixed right-6 bottom-6 flex flex-col items-end space-y-3 z-40 pointer-events-none">
       {/* Chorus Stack */}
       <div className="flex flex-col items-end space-y-2 pointer-events-auto">
-        {passedChoruses.map((index) => (
+        {[...passedChoruses].reverse().map((index) => (
           <button
             key={index}
             onClick={() => onScrollToChorus(index)}

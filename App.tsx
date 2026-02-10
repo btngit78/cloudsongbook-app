@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Song, UserRole, ViewState, UserSettings } from './types';
 import { SetList } from './types';
 import { MOCK_USER, MOCK_SONGS } from './constants';
@@ -9,6 +9,7 @@ import SongViewer from './components/SongViewer';
 import SongForm from './components/SongForm';
 import SettingsView from './components/SettingsView';
 import SetlistManager from './components/SetlistManager';
+import SongNavigator from './components/SongNavigator';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -24,6 +25,11 @@ const App: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [transpose, setTranspose] = useState(0);
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
+
+  // Navigation State
+  const scrollContainerRef = useRef<HTMLElement>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [passedChoruses, setPassedChoruses] = useState<number[]>([]);
 
   // Setlist State
   const [setlists, setSetlists] = useState<SetList[]>([]);
@@ -199,6 +205,52 @@ const App: React.FC = () => {
     setActiveSetlistIndex(0);
   };
 
+  // Scroll Handling
+  const handleScroll = () => {
+    console.log('Scroll event triggered');
+    if (!scrollContainerRef.current) return;
+    const scrollTop = scrollContainerRef.current.scrollTop;
+    
+    setShowBackToTop(scrollTop > 300);
+
+    const passed: number[] = [];
+    // Check for up to 4 choruses
+    for (let i = 0; i < 4; i++) {
+      const el = document.getElementById(`chorus-${i}`);
+      if (!el) break;
+      
+      // If the chorus is scrolled out of view (top + height < scroll + offset)
+      // We use a buffer (100px) to determine when it's "passed"
+      if (el.offsetTop + el.offsetHeight < scrollTop + 100) {
+        passed.push(i);
+      }
+    }
+    
+    setPassedChoruses(prev => {
+      if (prev.length !== passed.length) return passed;
+      return prev.every((val, idx) => val === passed[idx]) ? prev : passed;
+    });
+  };
+
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const scrollToChorus = (index: number) => {
+    const el = document.getElementById(`chorus-${index}`);
+    if (el && scrollContainerRef.current) {
+      // Scroll to element minus header height (approx 100px buffer)
+      scrollContainerRef.current.scrollTo({ top: el.offsetTop - 100, behavior: 'smooth' });
+    }
+  };
+
+  // Reset scroll on song change
+  useEffect(() => {
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    setShowBackToTop(false);
+    setPassedChoruses([]);
+  }, [currentSong]);
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4">
@@ -234,7 +286,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen overflow-hidden bg-gray-50 flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 h-16 sticky top-0 z-30 flex items-center px-4 md:px-6 shadow-sm">
         <button 
@@ -359,21 +411,33 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
+      <main 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto relative"
+      >
         {view === 'SONG_VIEW' && currentSong && (
-          <SongViewer 
-            song={currentSong} 
-            settings={user.settings} 
-            onUpdateSettings={handleUpdateSettings}
-            transpose={transpose}
-            activeSetlist={activeSetlist}
-            activeSetlistIndex={activeSetlistIndex}
-            onNextSong={() => handleSetlistNav('next')}
-            onPrevSong={() => handleSetlistNav('prev')}
-            onSetlistJump={(idx) => handleSetlistNav(idx)}
-            onExitSetlist={handleExitSetlist}
-            allSongs={allSongs}
-          />
+          <>
+            <SongViewer 
+              song={currentSong} 
+              settings={user.settings} 
+              onUpdateSettings={handleUpdateSettings}
+              transpose={transpose}
+              activeSetlist={activeSetlist}
+              activeSetlistIndex={activeSetlistIndex}
+              onNextSong={() => handleSetlistNav('next')}
+              onPrevSong={() => handleSetlistNav('prev')}
+              onSetlistJump={(idx) => handleSetlistNav(idx)}
+              onExitSetlist={handleExitSetlist}
+              allSongs={allSongs}
+            />
+            <SongNavigator 
+              showBackToTop={showBackToTop}
+              passedChoruses={passedChoruses}
+              onScrollToTop={scrollToTop}
+              onScrollToChorus={scrollToChorus}
+            />
+          </>
         )}
         {view === 'SONG_FORM' && (
           <SongForm 
