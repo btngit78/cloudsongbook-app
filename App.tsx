@@ -448,7 +448,15 @@ const App: React.FC = () => {
         )}
         {view === 'RECENT_SONGS' && (
           <div className="max-w-4xl mx-auto p-6">
-            <h2 className="text-2xl font-bold mb-6">Recently Added (Last 50)</h2>
+            <div className="flex items-center justify-between mb-6 border-b pb-4">
+              <h2 className="text-2xl font-bold text-gray-900">Recently Added (Last 50)</h2>
+              <button 
+                onClick={() => setView('SONG_VIEW')}
+                className="px-4 py-2 text-gray-800 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Back
+              </button>
+            </div>
             <div className="grid gap-4">
               {allSongs.slice(0, 50).map(s => (
                 <button 
@@ -458,7 +466,7 @@ const App: React.FC = () => {
                 >
                   <div className="text-left">
                     <p className="font-bold text-gray-900">{s.title}</p>
-                    <p className="text-sm text-gray-500">{s.author}</p>
+                    <p className="text-sm text-gray-500">{s.author} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars</p>
                   </div>
                   <i className="fa-solid fa-chevron-right text-gray-300"></i>
                 </button>

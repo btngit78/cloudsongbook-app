@@ -107,7 +107,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg transition-colors"
+            className="px-4 py-2 text-gray-600 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg transition-colors"
           >
             Cancel
           </button>

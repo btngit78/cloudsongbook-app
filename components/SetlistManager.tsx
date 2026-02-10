@@ -124,7 +124,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
         <div className="flex items-center justify-between mb-6 border-b pb-4">
           <h2 className="text-2xl font-bold text-gray-900">{editingId === 'new' ? 'New Setlist' : 'Edit Setlist'}</h2>
           <div className="flex space-x-2">
-            <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-600 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg">Cancel</button>
             <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg">Save</button>
           </div>
         </div>
@@ -208,7 +208,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-2xl font-bold text-gray-900">My Setlists</h2>
         <div className="flex space-x-3">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Back</button>
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg">Back</button>
           <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg flex items-center space-x-2">
             <i className="fa-solid fa-plus"></i>
             <span>Create New</span>
