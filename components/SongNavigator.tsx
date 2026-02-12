@@ -36,10 +36,10 @@ const SongNavigator: React.FC<SongNavigatorProps> = ({
       {showBackToTop && (
         <button
           onClick={onScrollToTop}
-          className="bg-gray-800 text-white w-12 h-12 rounded-full shadow-xl hover:bg-gray-900 transition-all flex items-center justify-center pointer-events-auto"
+          className="bg-gray-800 text-white dark:bg-white dark:text-gray-900 w-12 h-12 rounded-full shadow-xl hover:bg-gray-900 dark:hover:bg-gray-200 transition-all flex items-center justify-center pointer-events-auto"
           title="Back to Top"
         >
-          <i className="fa-solid fa-arrow-up"></i>
+          <i className="fa-solid fa-chevron-up text-xl"></i>
         </button>
       )}
       

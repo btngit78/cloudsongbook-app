@@ -120,22 +120,22 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     );
 
     return (
-      <div className="max-w-4xl mx-auto p-4 md:p-6 bg-white rounded-3xl shadow-xl mt-4 mb-12">
-        <div className="flex items-center justify-between mb-6 border-b pb-4">
-          <h2 className="text-2xl font-bold text-gray-900">{editingId === 'new' ? 'New Setlist' : 'Edit Setlist'}</h2>
+      <div className="max-w-4xl mx-auto p-4 md:p-6 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mt-4 mb-12 transition-colors">
+        <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{editingId === 'new' ? 'New Setlist' : 'Edit Setlist'}</h2>
           <div className="flex space-x-2">
-            <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-600 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg">Cancel</button>
-            <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg">Save</button>
+            <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+            <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none transition-all">Save</button>
           </div>
         </div>
 
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Setlist Name</label>
+            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Setlist Name</label>
             <input 
               value={editName}
               onChange={e => setEditName(e.target.value)}
-              className="w-full rounded-xl border-gray-200 shadow-sm border p-3 focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all"
               placeholder="e.g., Sunday Morning Service"
               autoFocus
             />
@@ -143,13 +143,13 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
 
           <div className="grid md:grid-cols-2 gap-6">
             {/* Selected Songs */}
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
-              <h3 className="font-bold text-gray-700 mb-3 flex justify-between">
+            <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border border-gray-200 dark:border-gray-700">
+              <h3 className="font-bold text-gray-700 dark:text-gray-300 mb-3 flex justify-between">
                 <span>Selected Songs</span>
-                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{editSongIds.length}</span>
+                <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded-full">{editSongIds.length}</span>
               </h3>
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {editSongIds.length === 0 && <p className="text-sm text-gray-400 italic">No songs selected.</p>}
+                {editSongIds.length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500 italic">No songs selected.</p>}
                 {editSongIds.map((id, idx) => (
                   <div 
                     key={id} 
@@ -157,10 +157,10 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                     onDragStart={(e) => handleDragStart(e, idx)}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, idx)}
-                    className={`flex items-center justify-between bg-white p-2 rounded-lg shadow-sm border border-gray-100 cursor-move transition-opacity ${draggedIndex === idx ? 'opacity-50 border-blue-300' : ''}`}
+                    className={`flex items-center justify-between bg-white dark:bg-gray-800 p-2 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 cursor-move transition-opacity ${draggedIndex === idx ? 'opacity-50 border-blue-300' : ''}`}
                   >
-                    <span className="text-sm font-medium truncate flex-1 mr-2 flex items-center">
-                      <i className="fa-solid fa-grip-lines text-gray-300 mr-3 cursor-grab"></i>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-200 truncate flex-1 mr-2 flex items-center">
+                      <i className="fa-solid fa-grip-lines text-gray-300 dark:text-gray-600 mr-3 cursor-grab"></i>
                       {idx + 1}. {getSongTitle(id)}
                     </span>
                     <div className="flex items-center space-x-1">
@@ -172,12 +172,12 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
             </div>
 
             {/* Available Songs */}
-            <div className="bg-white p-4 rounded-2xl border border-gray-200">
-              <h3 className="font-bold text-gray-700 mb-3">Add Songs</h3>
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700">
+              <h3 className="font-bold text-gray-700 dark:text-gray-300 mb-3">Add Songs</h3>
               <input 
                 type="text" 
                 placeholder="Search library..." 
-                className="w-full mb-3 px-3 py-2 rounded-lg bg-gray-100 border-none text-sm focus:ring-2 focus:ring-blue-500"
+                className="w-full mb-3 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 border-none text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 placeholder-gray-500 dark:placeholder-gray-400"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
@@ -186,13 +186,13 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                   <button 
                     key={song.id}
                     onClick={() => toggleSong(song.id)}
-                    className="w-full text-left flex items-center justify-between p-2 hover:bg-blue-50 rounded-lg group transition-colors"
+                    className="w-full text-left flex items-center justify-between p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg group transition-colors"
                   >
                     <div className="truncate">
-                      <p className="text-sm font-bold text-gray-800 truncate">{song.title}</p>
-                      <p className="text-xs text-gray-500 truncate">{song.author}</p>
+                      <p className="text-sm font-bold text-gray-800 dark:text-gray-200 truncate">{song.title}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{song.author}</p>
                     </div>
-                    <i className="fa-solid fa-plus text-gray-300 group-hover:text-blue-600"></i>
+                    <i className="fa-solid fa-plus text-gray-300 dark:text-gray-600 group-hover:text-blue-600 dark:group-hover:text-blue-400"></i>
                   </button>
                 ))}
               </div>
@@ -206,10 +206,10 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">My Setlists</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">My Setlists</h2>
         <div className="flex space-x-3">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg">Back</button>
-          <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg flex items-center space-x-2">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Back</button>
+          <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none flex items-center space-x-2 transition-all">
             <i className="fa-solid fa-plus"></i>
             <span>Create New</span>
           </button>
@@ -218,17 +218,17 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
 
       <div className={sortedSetlists.length > 10 ? "grid grid-cols-1 md:grid-cols-2 gap-4" : "flex flex-col gap-4"}>
         {setlists.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-300">
-            <i className="fa-solid fa-list-ul text-4xl text-gray-300 mb-4"></i>
-            <p className="text-gray-500 font-medium">No setlists created yet.</p>
+          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-3xl border border-dashed border-gray-300 dark:border-gray-700 transition-colors">
+            <i className="fa-solid fa-list-ul text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">No setlists created yet.</p>
           </div>
         )}
         {sortedSetlists.map(setlist => (
-          <div key={setlist.id} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+          <div key={setlist.id} className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
             {/* Play Button */}
             <button 
               onClick={() => onPlay(setlist)}
-              className="w-12 h-12 flex-shrink-0 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center hover:bg-blue-600 hover:text-white transition-colors shadow-sm"
+              className="w-12 h-12 flex-shrink-0 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 dark:hover:text-white transition-colors shadow-sm"
               title="Perform Set"
             >
               <i className="fa-solid fa-play ml-1 text-lg"></i>
@@ -236,25 +236,25 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-gray-900 truncate text-lg">{setlist.name}</h3>
-              <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-                <span className="font-medium bg-gray-100 px-2 py-0.5 rounded-md">{setlist.songIds.length} songs</span>
+              <h3 className="font-bold text-gray-900 dark:text-white truncate text-lg">{setlist.name}</h3>
+              <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                <span className="font-medium bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-md">{setlist.songIds.length} songs</span>
                 <span>Created: {new Date(setlist.createdAt).toLocaleDateString()}</span>
                 <span>Last used: {new Date(setlist.updatedAt || setlist.createdAt).toLocaleDateString()}</span>
                 <span className="text-gray-400">|</span>
-                <span className="text-blue-600 font-medium" title="Lifespan (Last used - Created)">{getFriendlyDuration(setlist.createdAt, setlist.updatedAt || setlist.createdAt)}</span>
+                <span className="text-blue-600 dark:text-blue-400 font-medium" title="Lifespan (Last used - Created)">{getFriendlyDuration(setlist.createdAt, setlist.updatedAt || setlist.createdAt)}</span>
               </div>
             </div>
 
             {/* Actions */}
             <div className="flex items-center gap-1">
-              <button onClick={() => handleDuplicate(setlist)} title="Duplicate Setlist" className="p-2 text-gray-400 hover:text-green-600 rounded-full hover:bg-green-50">
-                <i className="fa-solid fa-copy"></i>
-              </button>
-              <button onClick={() => startEdit(setlist)} title="Edit Setlist" className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-blue-50">
+              <button onClick={() => startEdit(setlist)} title="Edit Setlist" className="p-2 text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
                 <i className="fa-solid fa-pen"></i>
               </button>
-              <button onClick={() => { if(window.confirm('Delete this setlist?')) onDelete(setlist.id); }} title="Delete Setlist" className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50">
+              <button onClick={() => handleDuplicate(setlist)} title="Duplicate Setlist" className="p-2 text-gray-400 dark:text-gray-500 hover:text-green-600 dark:hover:text-green-400 rounded-full hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors">
+                <i className="fa-solid fa-copy"></i>
+              </button>
+              <button onClick={() => { if(window.confirm('Delete this setlist?')) onDelete(setlist.id); }} title="Delete Setlist" className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
                 <i className="fa-solid fa-trash"></i>
               </button>
             </div>

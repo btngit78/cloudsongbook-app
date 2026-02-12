@@ -26,6 +26,16 @@ const SongViewer: React.FC<SongViewerProps> = ({
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
 
+console.log('User settings:', settings);
+
+  const chordClass = (settings.chordColor === '' || settings.chordColor === 'amber') 
+    ? 'text-blue-600 dark:text-amber-400'   // default chord color for both themes
+    : 'text-blue-600 dark:text-blue-400';   // alternative chord color for dark theme
+    
+  const sectionClass = (settings.sectionColor === '' || settings.sectionColor === 'purple')
+    ? 'text-gray-800 dark:text-indigo-500'  // default section color for both themes
+    : 'text-gray-800 dark:text-teal-400';   // alternative section color for dark theme
+
   const transposeChord = (chord: string, offset: number): string => {
     if (offset === 0) return chord;
     
@@ -95,7 +105,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
     const parts = text.split(/(\([^)]*\))/g);
     return parts.map((part, index) => {
       if (part.startsWith('(') && part.endsWith(')')) {
-        return <span key={index} className="text-red-600">{part}</span>;
+        return <span key={index} className="text-red-600 dark:text-red-400">{part}</span>;
       }
       return part;
     });
@@ -126,9 +136,9 @@ const SongViewer: React.FC<SongViewerProps> = ({
            
             if (lIdx === 0) {
               if (startsWithChorusLabel)        // Chorus label (e.g. "Chorus:", "{soc}") needs indentation
-                return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">   Chorus:</div>;
+                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>   Chorus:</div>;
               else if (trimmed.endsWith(':'))   // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
-                return <div key={lIdx} className="font-bold text-gray-800 mb-1 whitespace-pre">{line.trim()}</div>;
+                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>{line.trim()}</div>;
             }
 
             const { chordLine, lyricLine } = processLine(line, inChorusSection);
@@ -137,7 +147,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
             return (
               <div key={lIdx} className="mb-0.5 last:mb-6">
                 {settings.showChords && hasChords && (
-                  <div className="chord whitespace-pre font-mono min-h-[1em] leading-none text-blue-600 mt-0.5">{chordLine}</div>
+                  <div className={`chord whitespace-pre font-mono min-h-[1em] leading-none ${chordClass} mt-0.5`}>{chordLine}</div>
                 )}
                 <div className="lyrics whitespace-pre font-mono">{formatLyrics(lyricLine)}</div>
               </div>
@@ -153,7 +163,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
       <header className="mb-4 pb-2 flex justify-between items-end">
         <div className="text-left">
           <p 
-            className="text-gray-500 italic font-medium leading-none"
+            className="text-gray-500 dark:text-gray-400 italic font-medium leading-none"
             style={{ fontSize: `${settings.fontSize * 0.66}px` }}
           >
             By {song.author || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
@@ -163,36 +173,36 @@ const SongViewer: React.FC<SongViewerProps> = ({
         {/* Setlist HUD */}
         {activeSetlist && (
           <div className="relative z-20">
-            <div className="flex items-center bg-gray-100 text-gray-900 rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden">
               <button 
                 onClick={onPrevSong}
                 disabled={activeSetlistIndex <= 0}
-                className="p-2 hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
                 <i className="fa-solid fa-backward-step"></i>
               </button>
               
               <button 
                 onClick={() => setHudOpen(!hudOpen)}
-                className="px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors"
+                className="px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
-                <span className="text-gray-500 truncate max-w-[150px]">{activeSetlist.name}:</span>
-                <span className="text-gray-900 text-sm">{activeSetlistIndex + 1}/{activeSetlist.songIds.length}</span>
+                <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px]">{activeSetlist.name}:</span>
+                <span className="text-gray-900 dark:text-gray-100 text-sm">{activeSetlistIndex + 1}/{activeSetlist.songIds.length}</span>
               </button>
 
               <button 
                 onClick={onNextSong}
                 disabled={activeSetlistIndex >= activeSetlist.songIds.length - 1}
-                className="p-2 hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
                 <i className="fa-solid fa-forward-step"></i>
               </button>
 
-              <div className="w-px h-5 bg-gray-300 mx-1"></div>
+              <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1"></div>
 
               <button 
                 onClick={onExitSetlist}
-                className="p-2 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                 title="Exit Setlist"
               >
                 <i className="fa-solid fa-xmark"></i>
@@ -201,16 +211,16 @@ const SongViewer: React.FC<SongViewerProps> = ({
 
             {/* Dropdown List */}
             {hudOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden max-h-64 overflow-y-auto">
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden max-h-64 overflow-y-auto">
                 {activeSetlist.songIds.map((sid, idx) => {
                   const sTitle = allSongs?.find(s => s.id === sid)?.title || 'Unknown';
                   return (
                     <button
                       key={idx}
                       onClick={() => { onSetlistJump?.(idx); setHudOpen(false); }}
-                      className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 hover:bg-blue-50 flex items-center space-x-3 ${idx === activeSetlistIndex ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-700'}`}
+                      className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 dark:border-gray-700 hover:bg-blue-50 dark:hover:bg-gray-700 flex items-center space-x-3 ${idx === activeSetlistIndex ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-700 dark:text-gray-200'}`}
                     >
-                      <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500 w-4">{idx + 1}.</span>
                       <span className="truncate">{sTitle}</span>
                     </button>
                   );
@@ -222,7 +232,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
       </header>
       
       <div 
-        className={`bg-white rounded-3xl shadow-sm border border-gray-100 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
+        className={`bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
         style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
       >
         {song.isPdf && song.pdfData ? (
@@ -234,7 +244,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
             ></iframe>
           </div>
         ) : (
-          <div className="leading-tight select-text font-mono">
+          <div className="leading-tight select-text font-mono text-gray-900 dark:text-gray-100">
             {renderContent(song.body)}
           </div>
         )}
@@ -243,7 +253,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
       {song.keywords && (
         <div className="mt-8 flex flex-wrap gap-2">
           {song.keywords.split(' ').map((kw, i) => (
-            <span key={i} className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded uppercase tracking-wider">
+            <span key={i} className="text-[10px] font-bold text-blue-500 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded uppercase tracking-wider">
               #{kw}
             </span>
           ))}

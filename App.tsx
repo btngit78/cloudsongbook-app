@@ -10,6 +10,7 @@ import SongForm from './components/SongForm';
 import SettingsView from './components/SettingsView';
 import SetlistManager from './components/SetlistManager';
 import SongNavigator from './components/SongNavigator';
+import { useTheme } from './components/useTheme';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -36,6 +37,9 @@ const App: React.FC = () => {
   const [activeSetlist, setActiveSetlist] = useState<SetList | null>(null);
   const [activeSetlistIndex, setActiveSetlistIndex] = useState(0);
 
+  // Sync theme
+  const { setTheme } = useTheme();
+
   // Initialize App
   useEffect(() => {
     const init = async () => {
@@ -60,8 +64,24 @@ const App: React.FC = () => {
     init();
   }, []);
 
+  // Sync User Settings Theme with ThemeProvider
+  useEffect(() => {
+    if (user?.settings.theme) {
+      setTheme(user.settings.theme);
+    }
+  }, [user?.settings.theme, setTheme]);
+
   const handleLogin = (role: UserRole = UserRole.FREE) => {
-    const newUser = { ...MOCK_USER, role };
+    const newUser = { 
+      ...MOCK_USER, 
+      role,
+      settings: {
+        ...MOCK_USER.settings,
+        theme: 'light', // Default to Light Mode for new logins
+        chordColor: '',
+        sectionColor: ''
+      }
+    };
     setUser(newUser);
     localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
   };
@@ -102,14 +122,16 @@ const App: React.FC = () => {
   };
 
   const handleUpdateSettings = (newSettings: Partial<UserSettings>) => {
-    if (user) {
+    setUser((prevUser) => {
+      if (!prevUser) return null;
       const updatedUser = {
-        ...user,
-        settings: { ...user.settings, ...newSettings }
+        ...prevUser,
+        settings: { ...prevUser.settings, ...newSettings }
       };
-      setUser(updatedUser);
+      console.log('Updated user:', updatedUser);
       localStorage.setItem('cloudsong_user', JSON.stringify(updatedUser));
-    }
+      return updatedUser;
+    });
   };
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,8 +229,8 @@ const App: React.FC = () => {
 
   // Scroll Handling
   const handleScroll = () => {
-    console.log('Scroll event triggered');
     if (!scrollContainerRef.current) return;
+   
     const scrollTop = scrollContainerRef.current.scrollTop;
     
     setShowBackToTop(scrollTop > 300);
@@ -286,14 +308,15 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-gray-50 flex flex-col">
+    <div className="h-screen overflow-hidden flex flex-col">
+      <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 h-16 sticky top-0 z-30 flex items-center px-4 md:px-6 shadow-sm">
+      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-16 sticky top-0 z-30 flex items-center px-4 md:px-6 shadow-sm transition-colors">
         <button 
           onClick={() => setMenuOpen(true)}
-          className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
         >
-          <i className="fa-solid fa-bars text-xl text-gray-700"></i>
+          <i className="fa-solid fa-bars text-xl text-gray-700 dark:text-gray-200"></i>
         </button>
 
         <div className="flex-1 mx-4 flex items-center overflow-hidden">
@@ -303,7 +326,7 @@ const App: React.FC = () => {
                 autoFocus
                 type="text"
                 placeholder="Search songs..."
-                className="w-full py-2 pl-4 pr-10 rounded-xl bg-gray-100 border-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full py-2 pl-4 pr-10 rounded-xl bg-gray-100 dark:bg-gray-700 dark:text-white border-none focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-500 dark:placeholder-gray-400"
                 value={searchQuery}
                 onChange={handleSearch}
                 onBlur={() => !searchQuery && setSearchOpen(false)}
@@ -312,15 +335,15 @@ const App: React.FC = () => {
                 <i className="fa-solid fa-magnifying-glass"></i>
               </button>
               {searchResults.length > 0 && (
-                <div className="absolute top-12 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div className="absolute top-12 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
                   {searchResults.slice(0, 5).map(s => (
                     <button
                       key={s.id}
                       onClick={() => selectSong(s.id)}
-                      className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 flex flex-col"
+                      className="w-full text-left px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 flex flex-col"
                     >
-                      <span className="font-bold text-gray-900">{s.title}</span>
-                      <span className="text-sm text-gray-500">{s.author}</span>
+                      <span className="font-bold text-gray-900 dark:text-gray-100">{s.title}</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">{s.author}</span>
                     </button>
                   ))}
                 </div>
@@ -331,10 +354,10 @@ const App: React.FC = () => {
               onClick={() => setSearchOpen(true)}
               className="flex-1 flex items-center justify-between cursor-pointer group"
             >
-              <h2 className="text-lg font-semibold text-gray-900 truncate max-w-[200px] md:max-w-md">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate max-w-[200px] md:max-w-md">
                 {currentSong?.title || "Select a Song"}
               </h2>
-              <i className="fa-solid fa-magnifying-glass text-gray-400 group-hover:text-blue-600 transition-colors ml-4"></i>
+              <i className="fa-solid fa-magnifying-glass text-gray-400 dark:text-gray-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors ml-4"></i>
             </div>
           )}
         </div>
@@ -343,14 +366,14 @@ const App: React.FC = () => {
         <div className="hidden md:flex items-center space-x-2">
           {currentSong?.key && keyInfo && (
             <div 
-              className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 select-none"
+              className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 select-none"
               onDoubleClick={() => setTranspose(0)}
               title="Double-click to reset key"
             >
-              <span className="text-xs font-bold text-gray-500 ml-2 mr-1">Key:</span>
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Key:</span>
               <div className="relative">
                 <select
-                  className="appearance-none bg-transparent font-bold text-gray-700 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                  className="appearance-none bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
                   value={keyInfo.currentKey}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -369,11 +392,11 @@ const App: React.FC = () => {
                 </select>
               </div>
               
-              <div className="flex flex-col ml-1 border-l border-gray-300 pl-1">
-                <button onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+              <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
+                <button onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                   <i className="fa-solid fa-caret-up text-[10px]"></i>
                 </button>
-                <button onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+                <button onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                   <i className="fa-solid fa-caret-down text-[10px]"></i>
                 </button>
               </div>
@@ -381,14 +404,14 @@ const App: React.FC = () => {
           )}
 
           <div 
-            className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 ml-2 select-none"
+            className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 ml-2 select-none"
             onDoubleClick={() => handleUpdateSettings({ fontSize: 18 })}
             title="Double-click to reset zoom"
           >
-            <span className="text-xs font-bold text-gray-500 ml-2 mr-1">Zoom:</span>
+            <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Zoom:</span>
             <div className="relative">
               <select
-                className="appearance-none bg-transparent font-bold text-gray-700 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                className="appearance-none bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
                 value={user.settings.fontSize}
                 onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
               >
@@ -398,11 +421,11 @@ const App: React.FC = () => {
               </select>
             </div>
             
-            <div className="flex flex-col ml-1 border-l border-gray-300 pl-1">
-              <button onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+            <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
+              <button onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                 <i className="fa-solid fa-caret-up text-[10px]"></i>
               </button>
-              <button onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded px-1">
+              <button onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                 <i className="fa-solid fa-caret-down text-[10px]"></i>
               </button>
             </div>
@@ -448,11 +471,11 @@ const App: React.FC = () => {
         )}
         {view === 'RECENT_SONGS' && (
           <div className="max-w-4xl mx-auto p-6">
-            <div className="flex items-center justify-between mb-6 border-b pb-4">
-              <h2 className="text-2xl font-bold text-gray-900">Recently Added (Last 50)</h2>
+            <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Recently Added (Last 50)</h2>
               <button 
                 onClick={() => setView('SONG_VIEW')}
-                className="px-4 py-2 text-gray-800 font-bold border border-gray-300 hover:bg-gray-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-gray-800 dark:text-gray-200 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               >
                 Back
               </button>
@@ -462,13 +485,13 @@ const App: React.FC = () => {
                 <button 
                   key={s.id} 
                   onClick={() => selectSong(s.id)}
-                  className="bg-white p-4 rounded-xl border border-gray-200 flex justify-between items-center hover:shadow-md transition-shadow"
+                  className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center hover:shadow-md transition-shadow"
                 >
                   <div className="text-left">
-                    <p className="font-bold text-gray-900">{s.title}</p>
-                    <p className="text-sm text-gray-500">{s.author} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars</p>
+                    <p className="font-bold text-gray-900 dark:text-gray-100">{s.title}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{s.author} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars</p>
                   </div>
-                  <i className="fa-solid fa-chevron-right text-gray-300"></i>
+                  <i className="fa-solid fa-chevron-right text-gray-300 dark:text-gray-600"></i>
                 </button>
               ))}
             </div>
@@ -503,48 +526,48 @@ const App: React.FC = () => {
             className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity"
             onClick={() => setMenuOpen(false)}
           ></div>
-          <aside className="fixed inset-y-0 left-0 w-80 bg-white z-50 shadow-2xl transform transition-transform animate-slideInLeft overflow-y-auto">
-            <div className="p-6 border-b border-gray-100 flex items-center space-x-4">
-              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xl font-bold">
+          <aside className="fixed inset-y-0 left-0 w-80 bg-white dark:bg-gray-800 z-50 shadow-2xl transform transition-transform animate-slideInLeft overflow-y-auto">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center space-x-4">
+              <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 text-xl font-bold">
                 {user.name.charAt(0)}
               </div>
               <div>
-                <p className="font-bold text-gray-900">{user.name}</p>
-                <p className="text-xs text-gray-500 uppercase font-semibold">{user.role} Member</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">{user.name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">{user.role} Member</p>
               </div>
             </div>
 
             <nav className="p-4 space-y-1">
-              <p className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Song Management</p>
+              <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Song Management</p>
               <button 
                 onClick={() => { setSongToEdit(undefined); setView('SONG_FORM'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-plus w-6"></i>
                 <span className="font-medium">Add New Song</span>
               </button>
               <button 
                 onClick={() => { setSongToEdit(currentSong || undefined); setView('SONG_FORM'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-pen-to-square w-6"></i>
                 <span className="font-medium">Edit Current Song</span>
               </button>
               <button 
                 onClick={() => { handleDeleteSong(); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-trash w-6"></i>
                 <span className="font-medium">Delete Current Song</span>
               </button>
 
-              <div className="my-4 border-t border-gray-100" />
+              <div className="my-4 border-t border-gray-100 dark:border-gray-700" />
               
-              <p className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Playlists</p>
+              <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Playlists</p>
               {activeSetlist && (
                 <button 
                   onClick={() => { handleExitSetlist(); setMenuOpen(false); }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors mb-2"
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors mb-2"
                 >
                   <i className="fa-solid fa-circle-stop w-6"></i>
                   <span className="font-medium">Exit Current Set</span>
@@ -552,32 +575,39 @@ const App: React.FC = () => {
               )}
               <button 
                 onClick={() => { setView('SETLIST_MANAGER'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-list-ul w-6"></i>
                 <span className="font-medium">My Set-Lists</span>
               </button>
               <button 
                 onClick={() => { setView('RECENT_SONGS'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-clock-rotate-left w-6"></i>
                 <span className="font-medium">Recent 50 Additions</span>
               </button>
 
-              <div className="my-4 border-t border-gray-100" />
+              <div className="my-4 border-t border-gray-100 dark:border-gray-700" />
 
-              <p className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Account</p>
+              <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Account</p>
+              <button 
+                onClick={() => handleUpdateSettings({ theme: user.settings.theme === 'dark' ? 'light' : 'dark' })}
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                <i className={`fa-solid ${user.settings.theme === 'dark' ? 'fa-sun' : 'fa-moon'} w-6`}></i>
+                <span className="font-medium">{user.settings.theme === 'dark' ? 'To Light Mode' : 'To Dark Mode'}</span>
+              </button>
               <button 
                 onClick={() => { setView('SETTINGS'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-user-gear w-6"></i>
                 <span className="font-medium">Profile & Settings</span>
               </button>
               <button 
                 onClick={handleLogout}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-right-from-bracket w-6"></i>
                 <span className="font-medium">Logout</span>
@@ -586,6 +616,7 @@ const App: React.FC = () => {
           </aside>
         </>
       )}
+      </div>
     </div>
   );
 };

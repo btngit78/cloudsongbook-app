@@ -9,8 +9,8 @@
 - **Deployment**: Optimized for Google Cloud/Firebase Hosting and AI Studio.
 
 ## 2. User Roles & Permissions
-- **Admin**: Full CRUD on songs/setlists, user management.
-- **Premium**: Edit personal setlists, advanced search, offline access to 100+ songs.
+- **Admin**: Full CRUD on all songs/setlists, user management.
+- **Premium**: CRUD on personal songs/setlists, read-only on others' songs/setlists, advanced search, offline access to 100+ songs.
 - **Free**: View songs, basic search, limited local cache (40 songs).
 
 ## 3. Core Modules
@@ -26,12 +26,12 @@
 ### C. Search & Discovery
 - **Combo Field**: Toggle between "Title Display" and "Live Search".
 - **Advanced Search**: Utilizes Gemini API for semantic search (e.g., "songs about hope in G major").
-- **Recent Feed**: Dedicated view for the 50 most recently added songs.
+- **Recent Feed**: Dedicated view for the 50 most recently added songs with the ability to edit or delete them on same page per user's authority on a given song listed.
 
 ## 4. Offline/Caching Strategy
 - **LRU Cache**: A specialized utility to manage the 40 most recently used songs in local storage.
 - **PWA Manifest**: (Simulated) support for standalone installation.
 
 ## 5. Design Language
-- **Theme**: Clean, high-contrast typography for readability on stage.
+- **Theme**: Clean, high-contrast typography for readability on stage. Default 'light' mode if user has yet to login and then subsequent change is stored along with other users' data on backend database; this will be simulated first with localStorage.
 - **Navigation**: Persistent top-bar with burger menu and context-sensitive action area.

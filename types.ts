@@ -18,6 +18,8 @@ export interface UserSettings {
   fontSize: number;
   showChords: boolean;
   theme: 'light' | 'dark';
+  chordColor: string; // For dark theme
+  sectionColor: string; // For dark theme
 }
 
 export interface Song {
@@ -25,9 +27,9 @@ export interface Song {
   title: string;
   author: string;
   body: string; // ChordPro text or empty if PDF
-  key?: string;
-  tempo?: number;
-  keywords?: string;
+  key: string;
+  tempo: number;
+  keywords: string;
   language: string;
   isPdf: boolean;
   pdfData?: string; // Base64 encoded PDF string
