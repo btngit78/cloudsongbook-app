@@ -17,7 +17,7 @@ export interface User {
 export interface UserSettings {
   fontSize: number;
   showChords: boolean;
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'system';
   chordColor: string; // For dark theme
   sectionColor: string; // For dark theme
 }

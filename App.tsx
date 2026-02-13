@@ -11,6 +11,7 @@ import SettingsView from './components/SettingsView';
 import SetlistManager from './components/SetlistManager';
 import SongNavigator from './components/SongNavigator';
 import { useTheme } from './components/useTheme';
+import RecentSongsView from './components/RecentSongsView';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -76,12 +77,10 @@ const App: React.FC = () => {
       ...MOCK_USER, 
       role,
       settings: {
-        ...MOCK_USER.settings,
-        theme: 'light', // Default to Light Mode for new logins
-        chordColor: '',
-        sectionColor: ''
+        ...MOCK_USER.settings
       }
     };
+    
     setUser(newUser);
     localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
   };
@@ -118,6 +117,17 @@ const App: React.FC = () => {
       setAllSongs(songs);
       setCurrentSong(songs[0] || null);
       setView('SONG_VIEW');
+    }
+  };
+
+  const handleDeleteSpecificSong = async (song: Song) => {
+    if (window.confirm(`Delete "${song.title}"?`)) {
+      await dbService.deleteSong(song.id);
+      const songs = await dbService.getSongs();
+      setAllSongs(songs);
+      if (currentSong?.id === song.id) {
+        setCurrentSong(songs[0] || null);
+      }
     }
   };
 
@@ -470,32 +480,16 @@ const App: React.FC = () => {
           />
         )}
         {view === 'RECENT_SONGS' && (
-          <div className="max-w-4xl mx-auto p-6">
-            <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Recently Added (Last 50)</h2>
-              <button 
-                onClick={() => setView('SONG_VIEW')}
-                className="px-4 py-2 text-gray-800 dark:text-gray-200 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                Back
-              </button>
-            </div>
-            <div className="grid gap-4">
-              {allSongs.slice(0, 50).map(s => (
-                <button 
-                  key={s.id} 
-                  onClick={() => selectSong(s.id)}
-                  className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center hover:shadow-md transition-shadow"
-                >
-                  <div className="text-left">
-                    <p className="font-bold text-gray-900 dark:text-gray-100">{s.title}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{s.author} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars</p>
-                  </div>
-                  <i className="fa-solid fa-chevron-right text-gray-300 dark:text-gray-600"></i>
-                </button>
-              ))}
-            </div>
-          </div>
+          <RecentSongsView 
+            songs={allSongs.slice(0, 50)}
+            onSelectSong={selectSong}
+            onEditSong={(song) => {
+              setSongToEdit(song);
+              setView('SONG_FORM');
+            }}
+            onDeleteSong={handleDeleteSpecificSong}
+            onBack={() => setView('SONG_VIEW')}
+          />
         )}
         {view === 'SETLIST_MANAGER' && (
           <SetlistManager

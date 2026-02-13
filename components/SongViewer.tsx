@@ -26,8 +26,6 @@ const SongViewer: React.FC<SongViewerProps> = ({
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
 
-console.log('User settings:', settings);
-
   const chordClass = (settings.chordColor === '' || settings.chordColor === 'amber') 
     ? 'text-blue-600 dark:text-amber-400'   // default chord color for both themes
     : 'text-blue-600 dark:text-blue-400';   // alternative chord color for dark theme

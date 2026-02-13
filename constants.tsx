@@ -39,7 +39,7 @@ export const MOCK_USER: User = {
   settings: {
     fontSize: 18,
     showChords: true,
-    theme: 'light',
+    theme: 'system',
     chordColor: '',
     sectionColor: ''
   }

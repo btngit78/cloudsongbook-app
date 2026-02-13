@@ -70,6 +70,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
             >
               <i className="fa-solid fa-moon mr-2"></i>Dark
             </button>
+            <button
+              onClick={() => setSettings({ ...settings, theme: 'system' })}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'system' ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              <i className="fa-solid fa-desktop mr-2"></i>System
+            </button>
           </div>
         </div>
 
