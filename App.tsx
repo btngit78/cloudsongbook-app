@@ -329,7 +329,7 @@ const App: React.FC = () => {
           <i className="fa-solid fa-bars text-xl text-gray-700 dark:text-gray-200"></i>
         </button>
 
-        <div className="flex-1 mx-4 flex items-center overflow-hidden">
+        <div className={`flex-1 mx-4 flex items-center overflow-hidden transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
           {searchOpen ? (
             <div className="relative w-full max-w-lg">
               <input
@@ -373,7 +373,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Extra Info Area */}
-        <div className="hidden md:flex items-center space-x-2">
+        <div className={`hidden md:flex items-center space-x-2 transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
           {currentSong?.key && keyInfo && (
             <div 
               className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 select-none"
