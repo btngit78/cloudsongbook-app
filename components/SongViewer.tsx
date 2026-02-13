@@ -236,7 +236,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
         {song.isPdf && song.pdfData ? (
           <div className="w-full h-[80vh]">
             <iframe 
-              src={song.pdfData} 
+              src={`${song.pdfData}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
               className="w-full h-full rounded-3xl"
               title={song.title}
             ></iframe>
