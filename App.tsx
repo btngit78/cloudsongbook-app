@@ -12,6 +12,7 @@ import SetlistManager from './components/SetlistManager';
 import SongNavigator from './components/SongNavigator';
 import { useTheme } from './components/useTheme';
 import RecentSongsView from './components/RecentSongsView';
+import { useGoogleLogin } from '@react-oauth/google';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -84,6 +85,36 @@ const App: React.FC = () => {
     setUser(newUser);
     localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
   };
+
+  const googleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      try {
+        // Fetch user details from Google using the access token
+        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        });
+        const profile = await userInfoResponse.json();
+
+        // Map Google profile to your App's User type
+        const newUser: User = {
+          id: profile.sub, // Google's unique user ID
+          name: profile.name,
+          email: profile.email,
+          role: UserRole.FREE, // Default role for new users
+          settings: {
+            ...MOCK_USER.settings, // Start with default settings
+            // You could potentially load saved settings from a database here based on profile.sub
+          }
+        };
+
+        setUser(newUser);
+        localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
+      } catch (error) {
+        console.error('Failed to fetch user info:', error);
+      }
+    },
+    onError: errorResponse => console.error('Login Failed:', errorResponse),
+  });
 
   const handleLogout = () => {
     setUser(null);
@@ -294,7 +325,7 @@ const App: React.FC = () => {
           <p className="text-gray-500 mb-8">Your digital stage companion</p>
           <div className="space-y-4">
             <button 
-              onClick={() => handleLogin(UserRole.PREMIUM)}
+              onClick={() => googleLogin()}
               className="w-full flex items-center justify-center space-x-3 bg-white border border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition-all font-semibold"
             >
               <i className="fa-brands fa-google text-red-500"></i>
