@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Fetch the user's role from their profile in the 'users' collection
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'ADMIN';
+    }
+
+    function isPremium() {
+      return isAuthenticated() && getUserRole() == 'PREMIUM';
+    }
+
+    // --- Setlists Rules ---
+    match /setlists/{setlistId} {
+      // 1. Read: Everyone (Admin, Premium, Free) can read all setlists
+      allow read: if isAuthenticated();
+
+      // 2. Create: Admin can create any; Premium must be the owner
+      allow create: if isAdmin() || (isPremium() && request.resource.data.ownerId == request.auth.uid);
+
+      // 3. Update: Admin can update any; Premium must be the owner of the existing doc AND keep ownership
+      allow update: if isAdmin() || (isPremium() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid);
+
+      // 4. Delete: Admin can delete any; Premium must be the owner of the existing doc
+      allow delete: if isAdmin() || (isPremium() && resource.data.ownerId == request.auth.uid);
+    }
+
+    // --- Users Collection (Required for app logic) ---
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth.uid == userId || isAdmin();
+    }
+    
+    // --- Songs Collection (Contextual) ---
+    match /songs/{songId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
