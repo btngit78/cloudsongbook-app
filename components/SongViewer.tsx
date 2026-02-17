@@ -164,7 +164,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
             className="text-gray-500 dark:text-gray-400 italic font-medium leading-none"
             style={{ fontSize: `${settings.fontSize * 0.66}px` }}
           >
-            By {song.author || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
+            By {song.authors || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
           </p>
         </div>
 
@@ -250,7 +250,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
 
       {song.keywords && (
         <div className="mt-8 flex flex-wrap gap-2">
-          {song.keywords.split(' ').map((kw, i) => (
+          {song.keywords.map((kw, i) => (
             <span key={i} className="text-[10px] font-bold text-blue-500 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded uppercase tracking-wider">
               #{kw}
             </span>

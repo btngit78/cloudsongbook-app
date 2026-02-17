@@ -25,15 +25,17 @@ export interface UserSettings {
 export interface Song {
   id: string;
   title: string;
-  author: string;
+  authors: string;
   body: string; // ChordPro text or empty if PDF
   key: string;
   tempo: number;
-  keywords: string;
+  keywords: Array<string>;
+  ownerId: string;
   language: string;
   isPdf: boolean;
   pdfData?: string; // Base64 encoded PDF string
   createdAt: number;
+  updatedAt: number;
   lastUsedAt: number;
 }
 

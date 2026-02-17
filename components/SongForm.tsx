@@ -14,11 +14,11 @@ const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   const [formData, setFormData] = useState<Partial<Song>>({
     title: '',
-    author: '',
+    authors: '',
     body: '',
     key: '',
     tempo: undefined,
-    keywords: '',
+    keywords: [],
     language: 'English',
     isPdf: false,
     pdfData: ''
@@ -81,7 +81,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
       setError('Title is required and must be max 80 characters.');
       return;
     }
-    if (formData.keywords && !validateKeywords(formData.keywords)) {
+    if (formData.keywords && !validateKeywords(Array.isArray(formData.keywords) ? formData.keywords.join(' ') : formData.keywords)) {
       setError('Keywords must be alpha-numeric (international allowed) and hyphen only, separated by spaces.');
       return;
     }
@@ -156,8 +156,8 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               maxLength={80}
               placeholder="e.g., John Newton"
               className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
-              value={formData.author}
-              onChange={e => setFormData({ ...formData, author: e.target.value })}
+              value={formData.authors}
+              onChange={e => setFormData({ ...formData, authors: e.target.value })}
             />
           </div>
 
@@ -196,8 +196,8 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               maxLength={80}
               placeholder="e.g., hymn classic worship"
               className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
-              value={formData.keywords}
-              onChange={e => setFormData({ ...formData, keywords: e.target.value })}
+              value={Array.isArray(formData.keywords) ? formData.keywords.join(' ') : formData.keywords}
+              onChange={e => setFormData({ ...formData, keywords: e.target.value.split(' ') })}
             />
             <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 uppercase font-bold tracking-wider">Alpha-numeric (intl allowed) and hyphen only, space separated</p>
           </div>

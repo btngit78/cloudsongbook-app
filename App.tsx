@@ -12,7 +12,8 @@ import SetlistManager from './components/SetlistManager';
 import SongNavigator from './components/SongNavigator';
 import { useTheme } from './components/useTheme';
 import RecentSongsView from './components/RecentSongsView';
-import { useGoogleLogin } from '@react-oauth/google';
+import { auth, googleProvider } from './firebaseConfig';
+import { signInWithPopup } from 'firebase/auth';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -47,7 +48,13 @@ const App: React.FC = () => {
     const init = async () => {
       // Check auth (mock)
       const storedUser = localStorage.getItem('cloudsong_user');
-      if (storedUser) setUser(JSON.parse(storedUser));
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+        // Load Setlists for this user from DB
+        const userSetlists = await dbService.getSetlists(parsedUser.id);
+        setSetlists(userSetlists);
+      }
 
       const songs = await dbService.getSongs();
       setAllSongs(songs);
@@ -58,10 +65,6 @@ const App: React.FC = () => {
       } else if (songs.length > 0) {
         setCurrentSong(songs[0]);
       }
-
-      // Load Setlists from LocalStorage (Mock DB)
-      const storedSetlists = localStorage.getItem('cloudsong_setlists');
-      if (storedSetlists) setSetlists(JSON.parse(storedSetlists));
     };
     init();
   }, []);
@@ -86,35 +89,33 @@ const App: React.FC = () => {
     localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
   };
 
-  const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      try {
-        // Fetch user details from Google using the access token
-        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-        });
-        const profile = await userInfoResponse.json();
+  const handleGoogleLogin = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
 
-        // Map Google profile to your App's User type
-        const newUser: User = {
-          id: profile.sub, // Google's unique user ID
-          name: profile.name,
-          email: profile.email,
-          role: UserRole.FREE, // Default role for new users
-          settings: {
-            ...MOCK_USER.settings, // Start with default settings
-            // You could potentially load saved settings from a database here based on profile.sub
-          }
-        };
+      // Map Firebase user to your App's User type
+      const newUser: User = {
+        id: firebaseUser.uid, // Use Firebase's unique ID
+        name: firebaseUser.displayName || 'New User',
+        email: firebaseUser.email || '',
+        role: UserRole.FREE, // Default role for new users
+        settings: {
+          ...MOCK_USER.settings, // Start with default settings
+        }
+      };
 
-        setUser(newUser);
-        localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
-      } catch (error) {
-        console.error('Failed to fetch user info:', error);
-      }
-    },
-    onError: errorResponse => console.error('Login Failed:', errorResponse),
-  });
+      const syncedUser = await dbService.syncUser(newUser);
+      setUser(syncedUser);
+      localStorage.setItem('cloudsong_user', JSON.stringify(syncedUser));
+      
+      // Fetch user's setlists
+      const userSetlists = await dbService.getSetlists(syncedUser.id);
+      setSetlists(userSetlists);
+    } catch (error) {
+      console.error('Google Login Failed:', error);
+    }
+  };
 
   const handleLogout = () => {
     setUser(null);
@@ -170,6 +171,7 @@ const App: React.FC = () => {
         settings: { ...prevUser.settings, ...newSettings }
       };
       console.log('Updated user:', updatedUser);
+      dbService.updateUserSettings(prevUser.id, newSettings);
       localStorage.setItem('cloudsong_user', JSON.stringify(updatedUser));
       return updatedUser;
     });
@@ -183,7 +185,7 @@ const App: React.FC = () => {
     } else {
       const filtered = allSongs.filter(s => 
         s.title.toLowerCase().includes(q.toLowerCase()) || 
-        s.author.toLowerCase().includes(q.toLowerCase())
+        s.authors.toLowerCase().includes(q.toLowerCase())
       );
       setSearchResults(filtered);
     }
@@ -229,13 +231,13 @@ const App: React.FC = () => {
       newSetlists = [...setlists, setlist];
     }
     setSetlists(newSetlists);
-    localStorage.setItem('cloudsong_setlists', JSON.stringify(newSetlists));
+    if (user) dbService.saveSetlist(setlist, user.id);
   };
 
   const handleDeleteSetlist = (id: string) => {
     const newSetlists = setlists.filter(s => s.id !== id);
     setSetlists(newSetlists);
-    localStorage.setItem('cloudsong_setlists', JSON.stringify(newSetlists));
+    dbService.deleteSetlist(id);
     if (activeSetlist?.id === id) setActiveSetlist(null);
   };
 
@@ -325,7 +327,7 @@ const App: React.FC = () => {
           <p className="text-gray-500 mb-8">Your digital stage companion</p>
           <div className="space-y-4">
             <button 
-              onClick={() => googleLogin()}
+              onClick={handleGoogleLogin}
               className="w-full flex items-center justify-center space-x-3 bg-white border border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition-all font-semibold"
             >
               <i className="fa-brands fa-google text-red-500"></i>
@@ -384,7 +386,7 @@ const App: React.FC = () => {
                       className="w-full text-left px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 flex flex-col"
                     >
                       <span className="font-bold text-gray-900 dark:text-gray-100">{s.title}</span>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">{s.author}</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">{s.authors}</span>
                     </button>
                   ))}
                 </div>
