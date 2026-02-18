@@ -4,7 +4,7 @@ import {
   collection, doc, getDocs, getDoc, setDoc, deleteDoc, 
   query, where, orderBy, limit 
 } from 'firebase/firestore';
-import { Song, User, SetList, UserSettings } from '../types';
+import { Song, User, SetList, UserSettings, UserRole } from '../types';
 
 const SONGS_COLLECTION = 'songs';
 const USERS_COLLECTION = 'users';
@@ -71,6 +71,19 @@ export const dbService = {
   },
 
   // --- Users ---
+  async getUser(id: string): Promise<User | undefined> {
+    try {
+      const docRef = doc(db, USERS_COLLECTION, id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return { id: docSnap.id, ...docSnap.data() } as User;
+      }
+    } catch (error) {
+      console.error("Error fetching user:", error);
+    }
+    return undefined;
+  },
+
   async syncUser(user: User): Promise<User> {
     const userRef = doc(db, USERS_COLLECTION, user.id);
     const userSnap = await getDoc(userRef);
@@ -88,6 +101,22 @@ export const dbService = {
   async updateUserSettings(userId: string, settings: Partial<UserSettings>): Promise<void> {
     const userRef = doc(db, USERS_COLLECTION, userId);
     await setDoc(userRef, { settings }, { merge: true });
+  },
+
+  async getAllUsers(): Promise<User[]> {
+    try {
+      const q = query(collection(db, USERS_COLLECTION), orderBy('name'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      return [];
+    }
+  },
+
+  async updateUserRole(userId: string, newRole: UserRole): Promise<void> {
+    const userRef = doc(db, USERS_COLLECTION, userId);
+    await setDoc(userRef, { role: newRole }, { merge: true });
   },
 
   // --- Setlists ---

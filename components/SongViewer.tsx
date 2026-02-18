@@ -172,7 +172,8 @@ const SongViewer: React.FC<SongViewerProps> = ({
         {activeSetlist && (
           <div className="relative z-20">
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden">
-              <button 
+              <button
+                aria-label="Previous Song" 
                 onClick={onPrevSong}
                 disabled={activeSetlistIndex <= 0}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
@@ -188,7 +189,8 @@ const SongViewer: React.FC<SongViewerProps> = ({
                 <span className="text-gray-900 dark:text-gray-100 text-sm">{activeSetlistIndex + 1}/{activeSetlist.songIds.length}</span>
               </button>
 
-              <button 
+              <button
+                aria-label="Next Song" 
                 onClick={onNextSong}
                 disabled={activeSetlistIndex >= activeSetlist.songIds.length - 1}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"

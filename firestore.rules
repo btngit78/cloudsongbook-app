@@ -4,9 +4,9 @@ service cloud.firestore {
 
     // --- Helper Functions ---
     
-    // Check if the user is authenticated
+    // Check if the user is authenticated and has a verified email
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.email_verified == true;
     }
 
     // Fetch the user's role from their profile in the 'users' collection
@@ -40,7 +40,9 @@ service cloud.firestore {
     // --- Users Collection (Required for app logic) ---
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if request.auth.uid == userId || isAdmin();
+      allow create: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == 'FREE');
+      allow update: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role);
+      allow delete: if isAdmin() || request.auth.uid == userId;
     }
     
     // --- Songs Collection (Contextual) ---

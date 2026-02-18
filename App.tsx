@@ -12,8 +12,10 @@ import SetlistManager from './components/SetlistManager';
 import SongNavigator from './components/SongNavigator';
 import { useTheme } from './components/useTheme';
 import RecentSongsView from './components/RecentSongsView';
+import AdminDashboard from './components/AdminDashboard';
 import { auth, googleProvider } from './firebaseConfig';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { sendEmailVerification } from 'firebase/auth';
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
@@ -22,13 +24,22 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [allSongs, setAllSongs] = useState<Song[]>([]);
-  const [view, setView] = useState<ViewState | 'SETLIST_MANAGER'>('SONG_VIEW');
+  const [view, setView] = useState<ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD'>('SONG_VIEW');
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [transpose, setTranspose] = useState(0);
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
+
+  // Email Auth State
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   // Navigation State
   const scrollContainerRef = useRef<HTMLElement>(null);
@@ -76,17 +87,79 @@ const App: React.FC = () => {
     }
   }, [user?.settings.theme, setTheme]);
 
-  const handleLogin = (role: UserRole = UserRole.FREE) => {
-    const newUser = { 
-      ...MOCK_USER, 
-      role,
-      settings: {
-        ...MOCK_USER.settings
-      }
-    };
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setResetSent(false);
+    setVerificationSent(false);
     
-    setUser(newUser);
-    localStorage.setItem('cloudsong_user', JSON.stringify(newUser));
+    if (!email || !password) {
+      setAuthError("Please enter both email and password.");
+      return;
+    }
+
+    try {
+      let firebaseUser;
+      if (isSignUp) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        firebaseUser = userCredential.user;
+        await sendEmailVerification(firebaseUser);
+        setVerificationSent(true);
+        setIsSignUp(false); // Switch to login view to show message
+        return; // Stop here to let user verify email before logging in
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        firebaseUser = userCredential.user;
+        if (!firebaseUser.emailVerified) {
+          setAuthError("Please verify your email to log in. Check your inbox for the verification link.");
+          // Sign out the user from the Firebase client instance to prevent a dangling session.
+          await auth.signOut();
+          return;
+        }
+      }
+
+      const newUser: User = {
+        id: firebaseUser.uid,
+        name: firebaseUser.displayName || email.split('@')[0],
+        email: firebaseUser.email || '',
+        role: UserRole.FREE,
+        settings: { ...MOCK_USER.settings }
+      };
+
+      const syncedUser = await dbService.syncUser(newUser);
+      setUser(syncedUser);
+      localStorage.setItem('cloudsong_user', JSON.stringify(syncedUser));
+      
+      const userSetlists = await dbService.getSetlists(syncedUser.id);
+      setSetlists(userSetlists);
+      
+    } catch (error: any) {
+      console.error('Email Auth Failed:', error);
+      let msg = "Authentication failed.";
+      if (error.code === 'auth/invalid-credential') msg = "Invalid email or password.";
+      if (error.code === 'auth/email-already-in-use') msg = "Email already in use.";
+      if (error.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
+      setAuthError(msg);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    setAuthError(null);
+    setResetSent(false);
+    if (!email) {
+      setAuthError("Please enter your email address first.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+    } catch (error: any) {
+      console.error('Password Reset Failed:', error);
+      let msg = "Failed to send reset email.";
+      if (error.code === 'auth/user-not-found') msg = "No user found with this email.";
+      if (error.code === 'auth/invalid-email') msg = "Invalid email address.";
+      setAuthError(msg);
+    }
   };
 
   const handleGoogleLogin = async () => {
@@ -326,20 +399,84 @@ const App: React.FC = () => {
           <h1 className="text-4xl font-extrabold text-gray-900 mb-2">CloudSongBook</h1>
           <p className="text-gray-500 mb-8">Your digital stage companion</p>
           <div className="space-y-4">
-            <button 
-              onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center space-x-3 bg-white border border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition-all font-semibold"
-            >
-              <i className="fa-brands fa-google text-red-500"></i>
-              <span>Continue with Google</span>
-            </button>
-            <button 
-              onClick={() => handleLogin(UserRole.FREE)}
-              className="w-full flex items-center justify-center space-x-3 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all font-semibold"
-            >
-              <i className="fa-solid fa-envelope"></i>
-              <span>Login with Email</span>
-            </button>
+            {!showEmailForm ? (
+              <>
+                <button 
+                  onClick={handleGoogleLogin}
+                  className="w-full flex items-center justify-center space-x-3 bg-white border border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition-all font-semibold"
+                >
+                  <i className="fa-brands fa-google text-red-500"></i>
+                  <span>Continue with Google</span>
+                </button>
+                <button 
+                  onClick={() => setShowEmailForm(true)}
+                  className="w-full flex items-center justify-center space-x-3 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all font-semibold"
+                >
+                  <i className="fa-solid fa-envelope"></i>
+                  <span>Login with Email</span>
+                </button>
+              </>
+            ) : (
+              <form onSubmit={handleEmailAuth} className="space-y-4 text-left animate-fadeIn">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Email</label>
+                  <input 
+                    type="email" 
+                    required
+                    className="w-full rounded-lg border-gray-300 bg-gray-50 p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Password</label>
+                  <input 
+                    type="password" 
+                    required
+                    className="w-full rounded-lg border-gray-300 bg-gray-50 p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                  {!isSignUp && (
+                    <div className="flex justify-end mt-1">
+                      <button 
+                        type="button"
+                        onClick={handlePasswordReset}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                  )}
+                </div>
+                
+                {authError && (
+                  <p className="text-red-500 text-sm font-medium">{authError}</p>
+                )}
+                {resetSent && (
+                  <p className="text-green-600 text-sm font-medium">Password reset email sent! Check your inbox.</p>
+                )}
+                {verificationSent && (
+                  <p className="text-green-600 text-sm font-medium">Account created! Verification email sent.</p>
+                )}
+
+                <button 
+                  type="submit"
+                  className="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 transition-all"
+                >
+                  {isSignUp ? 'Sign Up' : 'Sign In'}
+                </button>
+
+                <div className="flex justify-between items-center text-sm pt-2">
+                  <button type="button" onClick={() => setShowEmailForm(false)} className="text-gray-500 hover:text-gray-700">Back</button>
+                  <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="text-blue-600 hover:text-blue-800 font-semibold">
+                    {isSignUp ? 'Switch to Login' : 'Create an account'}
+                  </button>
+                </div>
+              </form>
+            )}
             <div className="pt-6 border-t border-gray-100 flex justify-between text-xs text-gray-400">
               <a href="#" className="hover:text-blue-600">Privacy Policy</a>
               <a href="#" className="hover:text-blue-600">Terms of Service</a>
@@ -356,6 +493,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-16 sticky top-0 z-30 flex items-center px-4 md:px-6 shadow-sm transition-colors">
         <button 
+          aria-label="Open Menu"
           onClick={() => setMenuOpen(true)}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
         >
@@ -374,7 +512,8 @@ const App: React.FC = () => {
                 onChange={handleSearch}
                 onBlur={() => !searchQuery && setSearchOpen(false)}
               />
-              <button className="absolute right-3 top-2 text-gray-400">
+              <button aria-label="Search" 
+                className="absolute right-3 top-2 text-gray-400">
                 <i className="fa-solid fa-magnifying-glass"></i>
               </button>
               {searchResults.length > 0 && (
@@ -416,6 +555,7 @@ const App: React.FC = () => {
               <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Key:</span>
               <div className="relative">
                 <select
+                  aria-label="Transpose Key"
                   className="appearance-none bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
                   value={keyInfo.currentKey}
                   onChange={(e) => {
@@ -436,10 +576,12 @@ const App: React.FC = () => {
               </div>
               
               <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
-                <button onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                <button aria-label="Up a semitone"
+                  onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                   <i className="fa-solid fa-caret-up text-[10px]"></i>
                 </button>
-                <button onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                <button aria-label="Down a semitone"
+                  onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                   <i className="fa-solid fa-caret-down text-[10px]"></i>
                 </button>
               </div>
@@ -454,6 +596,7 @@ const App: React.FC = () => {
             <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Zoom:</span>
             <div className="relative">
               <select
+                aria-label="Font Size"
                 className="appearance-none bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
                 value={user.settings.fontSize}
                 onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
@@ -465,10 +608,15 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
-              <button onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+              <button 
+                aria-label="Increase Font Size"
+                onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })}
+                className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                 <i className="fa-solid fa-caret-up text-[10px]"></i>
               </button>
-              <button onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+              <button 
+                aria-label="Decrease Font Size"
+                onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                 <i className="fa-solid fa-caret-down text-[10px]"></i>
               </button>
             </div>
@@ -544,6 +692,12 @@ const App: React.FC = () => {
             onCancel={() => setView('SONG_VIEW')}
           />
         )}
+        {view === 'ADMIN_DASHBOARD' && user && (
+          <AdminDashboard
+            currentUser={user}
+            onBack={() => setView('SONG_VIEW')}
+          />
+        )}
       </main>
 
       {/* Burger Menu Sidebar */}
@@ -616,6 +770,16 @@ const App: React.FC = () => {
               </button>
 
               <div className="my-4 border-t border-gray-100 dark:border-gray-700" />
+
+              {user.role === UserRole.ADMIN && (
+                <button 
+                  onClick={() => { setView('ADMIN_DASHBOARD'); setMenuOpen(false); }}
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-xl transition-colors mb-2"
+                >
+                  <i className="fa-solid fa-users-gear w-6"></i>
+                  <span className="font-medium">Admin Dashboard</span>
+                </button>
+              )}
 
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Account</p>
               <button 

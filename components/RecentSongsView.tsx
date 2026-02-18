@@ -1,5 +1,6 @@
-import React from 'react';
-import { Song } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Song, UserRole } from '../types';
+import { dbService } from '../services/dbService';
 
 interface RecentSongsViewProps {
   songs: Song[];
@@ -16,6 +17,26 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
   onDeleteSong,
   onBack,
 }) => {
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const fetchOwners = async () => {
+      const uniqueOwnerIds = Array.from(new Set(songs.map(s => s.ownerId).filter(id => id && id !== 'Unknown')));
+      const names: Record<string, string> = {};
+      
+      await Promise.all(uniqueOwnerIds.map(async (id) => {
+        const user = await dbService.getUser(id!);
+        if (user) {
+          names[id!] = user.role === UserRole.ADMIN ? 'Admin' : user.name;
+        } else {
+          names[id!] = 'Unknown';
+        }
+      }));
+      setOwnerNames(names);
+    };
+    if (songs.length > 0) fetchOwners();
+  }, [songs]);
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
@@ -43,7 +64,7 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                 onClick={() => onSelectSong(s.id)}
               >
                 <p className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{s.title}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{s.author} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{s.authors} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars - key: {s.key} - tempo: {s.tempo > 0 ? s.tempo : 'N/A'} - Owner: {(!s.ownerId || s.ownerId === 'Unknown') ? 'Unknown' : ownerNames[s.ownerId] || 'Loading...'}</p>
               </div>
               
               <div className="flex items-center space-x-1 flex-shrink-0">
@@ -61,7 +82,8 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                 >
                   <i className="fa-solid fa-trash"></i>
                 </button>
-                <button 
+                <button
+                  title="Select Song"
                   onClick={() => onSelectSong(s.id)}
                   className="p-2 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400"
                 >

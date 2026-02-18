@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, UserSettings } from '../types';
+import { User, UserRole, UserSettings } from '../types';
 
 interface SettingsViewProps {
   user: User;
@@ -38,6 +38,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Show Chords</span>
           <button 
+            aria-label="Toggle Show Chords"
             onClick={() => setSettings({ ...settings, showChords: !settings.showChords })}
             className={`w-12 h-6 rounded-full transition-colors relative ${settings.showChords ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
           >
@@ -48,6 +49,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font Size ({settings.fontSize}px)</label>
           <input 
+            aria-label="Font Size"
             type="range" min="12" max="32" 
             value={settings.fontSize}
             onChange={(e) => setSettings({ ...settings, fontSize: parseInt(e.target.value) })}
@@ -84,6 +86,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Chord Color</label>
               <select
+                aria-label="Chord Color"
                 value={settings.chordColor || 'amber'}
                 onChange={(e) => setSettings({ ...settings, chordColor: e.target.value })}
                 className="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -95,7 +98,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section Label Color</label>
               <select
-                value={settings.sectionColor || 'purple'}
+                aria-label="Section Label Color"
                 onChange={(e) => setSettings({ ...settings, sectionColor: e.target.value })}
                 className="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
               >
@@ -107,7 +110,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
         )}
 
         <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-          <p className="text-xs text-gray-400 dark:text-gray-500">User ID: {user.id}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">User ID: {user.role === UserRole.ADMIN ? 'Admin' : user.name}</p>
           <p className="text-xs text-gray-400 dark:text-gray-500">Account Type: <span className="uppercase font-bold text-blue-600 dark:text-blue-400">{user.role}</span></p>
         </div>
       </div>
