@@ -39,13 +39,21 @@ export interface Song {
   lastUsedAt: number;
 }
 
-export interface SetList {
+export interface SetList { 
   id: string;
-  name: string;
-  songIds: string[];
-  ownerId: string;
-  createdAt: number;
-  updatedAt: number;
+  name: string; 
+  ownerId: string; 
+  choices: SongChoice[]; 
+  createdAt: number; 
+  updatedAt: number; 
+} 
+  
+export interface SongChoice { 
+  songId: string; 
+  key?: string; 
+  style?: string; 
+  tempo?: number; 
+  singer?: string; 
 }
 
 export type ViewState = 'SONG_VIEW' | 'SONG_FORM' | 'SETLIST_LIST' | 'SETLIST_FORM' | 'RECENT_SONGS' | 'ADVANCED_SEARCH' | 'SETTINGS';

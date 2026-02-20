@@ -44,8 +44,8 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => v
   const playSetlist = (setlist: SetList) => {
     setActiveSetlist(setlist);
     setActiveSetlistIndex(0);
-    if (setlist.songIds.length > 0) {
-      selectSong(setlist.songIds[0]);
+    if (setlist.choices && setlist.choices.length > 0) {
+      selectSong(setlist.choices[0].songId);
     }
   };
 
@@ -57,9 +57,9 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => v
     else if (direction === 'prev') newIndex--;
     else newIndex = direction;
 
-    if (newIndex >= 0 && newIndex < activeSetlist.songIds.length) {
+    if (activeSetlist.choices && newIndex >= 0 && newIndex < activeSetlist.choices.length) {
       setActiveSetlistIndex(newIndex);
-      selectSong(activeSetlist.songIds[newIndex]);
+      selectSong(activeSetlist.choices[newIndex].songId);
     }
   };
 

@@ -124,7 +124,12 @@ export const dbService = {
     try {
       const q = query(collection(db, SETLISTS_COLLECTION), where('ownerId', '==', userId));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SetList));
+      return snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Backward compatibility: map legacy songIds to choices if choices is missing
+        const choices = data.choices || (data.songIds ? data.songIds.map((sid: string) => ({ songId: sid })) : []);
+        return { id: doc.id, ...data, choices } as SetList;
+      });
     } catch (error) {
       console.error("Error fetching setlists:", error);
       return [];
@@ -139,7 +144,7 @@ export const dbService = {
       updatedAt: now,
       createdAt: (setlist as any).createdAt || now,
       name: setlist.name || 'Untitled Setlist',
-      songIds: setlist.songIds || []
+      choices: setlist.choices || []
     };
     await setDoc(doc(db, SETLISTS_COLLECTION, setlist.id), data, { merge: true });
   },

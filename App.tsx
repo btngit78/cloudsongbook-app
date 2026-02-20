@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { User, Song, UserRole, ViewState, UserSettings } from './types';
 import { SetList } from './types';
 import { MOCK_USER, MOCK_SONGS } from './constants';
@@ -13,72 +13,83 @@ import SongNavigator from './components/SongNavigator';
 import { useTheme } from './components/useTheme';
 import RecentSongsView from './components/RecentSongsView';
 import AdminDashboard from './components/AdminDashboard';
-import { auth, googleProvider } from './firebaseConfig';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { sendEmailVerification } from 'firebase/auth';
-
-const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+import { useAuth } from './hooks/useAuth';
+import { useSongs } from './hooks/useSong';
+import { useSetlists } from './hooks/useSetlists';
+import { useScroll } from './hooks/useScroll';
+import { useTranspose } from './hooks/useTranspose';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [currentSong, setCurrentSong] = useState<Song | null>(null);
-  const [allSongs, setAllSongs] = useState<Song[]>([]);
+  const { 
+    user, 
+    showEmailForm, setShowEmailForm,
+    email, setEmail,
+    password, setPassword,
+    isSignUp, setIsSignUp,
+    authError,
+    resetSent,
+    verificationSent,
+    handleEmailAuth,
+    handleGoogleLogin,
+    handleLogout,
+    handlePasswordReset,
+    handleUpdateSettings
+  } = useAuth();
+
+  const {
+    allSongs,
+    currentSong,
+    searchOpen,
+    setSearchOpen,
+    searchQuery,
+    searchResults,
+    selectSong,
+    handleSearch,
+    saveSong,
+    deleteSong,
+    deleteSpecificSong
+  } = useSongs();
+
   const [view, setView] = useState<ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD'>('SONG_VIEW');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Song[]>([]);
-  const [transpose, setTranspose] = useState(0);
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
-
-  // Email Auth State
-  const [showEmailForm, setShowEmailForm] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [resetSent, setResetSent] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
-
-  // Navigation State
-  const scrollContainerRef = useRef<HTMLElement>(null);
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const [passedChoruses, setPassedChoruses] = useState<number[]>([]);
-
-  // Setlist State
-  const [setlists, setSetlists] = useState<SetList[]>([]);
-  const [activeSetlist, setActiveSetlist] = useState<SetList | null>(null);
-  const [activeSetlistIndex, setActiveSetlistIndex] = useState(0);
 
   // Sync theme
   const { setTheme } = useTheme();
 
-  // Initialize App
-  useEffect(() => {
-    const init = async () => {
-      // Check auth (mock)
-      const storedUser = localStorage.getItem('cloudsong_user');
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        // Load Setlists for this user from DB
-        const userSetlists = await dbService.getSetlists(parsedUser.id);
-        setSetlists(userSetlists);
-      }
+  const handleSelectSong = useCallback(async (songId: string) => {
+    const song = await selectSong(songId);
+    if (song) {
+      setView('SONG_VIEW');
+    }
+  }, [selectSong]);
 
-      const songs = await dbService.getSongs();
-      setAllSongs(songs);
+  const {
+    setlists,
+    activeSetlist,
+    activeSetlistIndex,
+    saveSetlist,
+    deleteSetlist,
+    playSetlist,
+    navigateSetlist,
+    exitSetlist
+  } = useSetlists(user, handleSelectSong);
 
-      const recent = dbService.getRecentCache();
-      if (recent.length > 0) {
-        setCurrentSong(recent[0]);
-      } else if (songs.length > 0) {
-        setCurrentSong(songs[0]);
-      }
-    };
-    init();
-  }, []);
+  const {
+    scrollContainerRef,
+    showBackToTop,
+    passedChoruses,
+    handleScroll,
+    scrollToTop,
+    scrollToChorus
+  } = useScroll(currentSong);
+
+  const {
+    transpose,
+    setTranspose,
+    keyInfo,
+    CHROMATIC_SCALE
+  } = useTranspose(currentSong);
 
   // Sync User Settings Theme with ThemeProvider
   useEffect(() => {
@@ -87,307 +98,51 @@ const App: React.FC = () => {
     }
   }, [user?.settings.theme, setTheme]);
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setResetSent(false);
-    setVerificationSent(false);
-    
-    if (!email || !password) {
-      setAuthError("Please enter both email and password.");
-      return;
-    }
-
-    try {
-      let firebaseUser;
-      if (isSignUp) {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        firebaseUser = userCredential.user;
-        await sendEmailVerification(firebaseUser);
-        setVerificationSent(true);
-        setIsSignUp(false); // Switch to login view to show message
-        return; // Stop here to let user verify email before logging in
-      } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        firebaseUser = userCredential.user;
-        if (!firebaseUser.emailVerified) {
-          setAuthError("Please verify your email to log in. Check your inbox for the verification link.");
-          // Sign out the user from the Firebase client instance to prevent a dangling session.
-          await auth.signOut();
-          return;
-        }
-      }
-
-      const newUser: User = {
-        id: firebaseUser.uid,
-        name: firebaseUser.displayName || email.split('@')[0],
-        email: firebaseUser.email || '',
-        role: UserRole.FREE,
-        settings: { ...MOCK_USER.settings }
-      };
-
-      const syncedUser = await dbService.syncUser(newUser);
-      setUser(syncedUser);
-      localStorage.setItem('cloudsong_user', JSON.stringify(syncedUser));
-      
-      const userSetlists = await dbService.getSetlists(syncedUser.id);
-      setSetlists(userSetlists);
-      
-    } catch (error: any) {
-      console.error('Email Auth Failed:', error);
-      let msg = "Authentication failed.";
-      if (error.code === 'auth/invalid-credential') msg = "Invalid email or password.";
-      if (error.code === 'auth/email-already-in-use') msg = "Email already in use.";
-      if (error.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
-      setAuthError(msg);
-    }
-  };
-
-  const handlePasswordReset = async () => {
-    setAuthError(null);
-    setResetSent(false);
-    if (!email) {
-      setAuthError("Please enter your email address first.");
-      return;
-    }
-    try {
-      await sendPasswordResetEmail(auth, email);
-      setResetSent(true);
-    } catch (error: any) {
-      console.error('Password Reset Failed:', error);
-      let msg = "Failed to send reset email.";
-      if (error.code === 'auth/user-not-found') msg = "No user found with this email.";
-      if (error.code === 'auth/invalid-email') msg = "Invalid email address.";
-      setAuthError(msg);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const firebaseUser = result.user;
-
-      // Map Firebase user to your App's User type
-      const newUser: User = {
-        id: firebaseUser.uid, // Use Firebase's unique ID
-        name: firebaseUser.displayName || 'New User',
-        email: firebaseUser.email || '',
-        role: UserRole.FREE, // Default role for new users
-        settings: {
-          ...MOCK_USER.settings, // Start with default settings
-        }
-      };
-
-      const syncedUser = await dbService.syncUser(newUser);
-      setUser(syncedUser);
-      localStorage.setItem('cloudsong_user', JSON.stringify(syncedUser));
-      
-      // Fetch user's setlists
-      const userSetlists = await dbService.getSetlists(syncedUser.id);
-      setSetlists(userSetlists);
-    } catch (error) {
-      console.error('Google Login Failed:', error);
-    }
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('cloudsong_user');
-  };
-
-  const selectSong = async (songId: string) => {
-    const song = await dbService.getSong(songId);
-    if (song) {
-      setCurrentSong(song);
-      setView('SONG_VIEW');
-      setTranspose(0);
-      setSearchOpen(false);
-      setSearchQuery('');
-      // Note: We don't clear activeSetlist here to allow "browsing" while in a set, unless we want strict mode.
-    }
-  };
-
   const handleSaveSong = async (songData: Partial<Song>) => {
-    const saved = await dbService.saveSong(songData);
-    const updatedSongs = await dbService.getSongs();
-    setAllSongs(updatedSongs);
-    setCurrentSong(saved);
+  //  console.log("Saving song with data:", songData);
+    console.log("Current user in handleSaveSong:", user);
+    if (!user) {
+      console.error("User not authenticated. Cannot save song.");
+      return;
+    }
+    // Use existing ownerId if available (editing), otherwise assign to current user (creating)
+    const ownerId = songData.ownerId || user.id;
+    await saveSong({ ...songData, ownerId });
     setView('SONG_VIEW');
   };
 
   const handleDeleteSong = async () => {
-    if (currentSong && window.confirm(`Delete "${currentSong.title}"?`)) {
-      await dbService.deleteSong(currentSong.id);
-      const songs = await dbService.getSongs();
-      setAllSongs(songs);
-      setCurrentSong(songs[0] || null);
+    const deleted = await deleteSong();
+    if (deleted) {
       setView('SONG_VIEW');
     }
   };
 
-  const handleDeleteSpecificSong = async (song: Song) => {
-    if (window.confirm(`Delete "${song.title}"?`)) {
-      await dbService.deleteSong(song.id);
-      const songs = await dbService.getSongs();
-      setAllSongs(songs);
-      if (currentSong?.id === song.id) {
-        setCurrentSong(songs[0] || null);
-      }
-    }
-  };
-
-  const handleUpdateSettings = (newSettings: Partial<UserSettings>) => {
-    setUser((prevUser) => {
-      if (!prevUser) return null;
-      const updatedUser = {
-        ...prevUser,
-        settings: { ...prevUser.settings, ...newSettings }
-      };
-      console.log('Updated user:', updatedUser);
-      dbService.updateUserSettings(prevUser.id, newSettings);
-      localStorage.setItem('cloudsong_user', JSON.stringify(updatedUser));
-      return updatedUser;
-    });
-  };
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const q = e.target.value;
-    setSearchQuery(q);
-    if (q.trim() === '') {
-      setSearchResults([]);
-    } else {
-      const filtered = allSongs.filter(s => 
-        s.title.toLowerCase().includes(q.toLowerCase()) || 
-        s.authors.toLowerCase().includes(q.toLowerCase())
-      );
-      setSearchResults(filtered);
-    }
-  };
-
-  const keyInfo = useMemo(() => {
-    if (!currentSong?.key) return null;
-    
-    let root = currentSong.key;
-    let suffix = '';
-    
-    const match = currentSong.key.match(/^([A-G][#b]?)(.*)/);
-    if (match) {
-      root = match[1];
-      suffix = match[2];
-    }
-
-    if (FLAT_MAP[root]) root = FLAT_MAP[root];
-    const originalIndex = CHROMATIC_SCALE.indexOf(root);
-    
-    if (originalIndex === -1) return null;
-
-    let currentIndex = (originalIndex + transpose) % 12;
-    if (currentIndex < 0) currentIndex += 12;
-
-    return {
-      originalIndex,
-      currentIndex,
-      currentKey: CHROMATIC_SCALE[currentIndex] + suffix,
-      suffix,
-      root
-    };
-  }, [currentSong, transpose]);
-
-  // Setlist Handlers
-  const handleSaveSetlist = (setlist: SetList) => {
-    const existingIdx = setlists.findIndex(s => s.id === setlist.id);
-    let newSetlists;
-    if (existingIdx >= 0) {
-      newSetlists = [...setlists];
-      newSetlists[existingIdx] = setlist;
-    } else {
-      newSetlists = [...setlists, setlist];
-    }
-    setSetlists(newSetlists);
-    if (user) dbService.saveSetlist(setlist, user.id);
-  };
-
-  const handleDeleteSetlist = (id: string) => {
-    const newSetlists = setlists.filter(s => s.id !== id);
-    setSetlists(newSetlists);
-    dbService.deleteSetlist(id);
-    if (activeSetlist?.id === id) setActiveSetlist(null);
+  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleSearch(e.target.value);
   };
 
   const handlePlaySetlist = (setlist: SetList) => {
-    setActiveSetlist(setlist);
-    setActiveSetlistIndex(0);
-    if (setlist.songIds.length > 0) {
-      selectSong(setlist.songIds[0]);
-    }
+    playSetlist(setlist);
     setView('SONG_VIEW');
     setMenuOpen(false);
   };
 
-  const handleSetlistNav = (direction: 'next' | 'prev' | number) => {
-    if (!activeSetlist) return;
-    let newIndex = activeSetlistIndex;
-    
-    if (direction === 'next') newIndex++;
-    else if (direction === 'prev') newIndex--;
-    else newIndex = direction;
-
-    if (newIndex >= 0 && newIndex < activeSetlist.songIds.length) {
-      setActiveSetlistIndex(newIndex);
-      selectSong(activeSetlist.songIds[newIndex]);
+  const getKeyLabel = (note: string, suffix: string) => {
+    const flatMap: Record<string, string> = {
+      'C#': 'Db',
+      'D#': 'Eb',
+      'F#': 'Gb',
+      'G#': 'Ab',
+      'A#': 'Bb'
+    };
+    if (note === 'C#') return `Db${suffix}/C#${suffix}`;
+    if (note === 'F#') return `Gb${suffix}/F#${suffix}`;
+    if (flatMap[note]) {
+      return `${flatMap[note]}${suffix}`;
     }
+    return `${note}${suffix}`;
   };
-
-  const handleExitSetlist = () => {
-    setActiveSetlist(null);
-    setActiveSetlistIndex(0);
-  };
-
-  // Scroll Handling
-  const handleScroll = () => {
-    if (!scrollContainerRef.current) return;
-   
-    const scrollTop = scrollContainerRef.current.scrollTop;
-    
-    setShowBackToTop(scrollTop > 300);
-
-    const passed: number[] = [];
-    // Check for up to 4 choruses
-    for (let i = 0; i < 4; i++) {
-      const el = document.getElementById(`chorus-${i}`);
-      if (!el) break;
-      
-      // If the chorus is scrolled out of view (top + height < scroll + offset)
-      // We use a buffer (100px) to determine when it's "passed"
-      if (el.offsetTop + el.offsetHeight < scrollTop + 100) {
-        passed.push(i);
-      }
-    }
-    
-    setPassedChoruses(prev => {
-      if (prev.length !== passed.length) return passed;
-      return prev.every((val, idx) => val === passed[idx]) ? prev : passed;
-    });
-  };
-
-  const scrollToTop = () => {
-    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const scrollToChorus = (index: number) => {
-    const el = document.getElementById(`chorus-${index}`);
-    if (el && scrollContainerRef.current) {
-      // Scroll to element minus header height (approx 100px buffer)
-      scrollContainerRef.current.scrollTo({ top: el.offsetTop - 100, behavior: 'smooth' });
-    }
-  };
-
-  // Reset scroll on song change
-  useEffect(() => {
-    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
-    setShowBackToTop(false);
-    setPassedChoruses([]);
-  }, [currentSong]);
 
   if (!user) {
     return (
@@ -509,7 +264,7 @@ const App: React.FC = () => {
                 placeholder="Search songs..."
                 className="w-full py-2 pl-4 pr-10 rounded-xl bg-gray-100 dark:bg-gray-700 dark:text-white border-none focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-500 dark:placeholder-gray-400"
                 value={searchQuery}
-                onChange={handleSearch}
+                onChange={handleSearchInput}
                 onBlur={() => !searchQuery && setSearchOpen(false)}
               />
               <button aria-label="Search" 
@@ -521,7 +276,7 @@ const App: React.FC = () => {
                   {searchResults.slice(0, 5).map(s => (
                     <button
                       key={s.id}
-                      onClick={() => selectSong(s.id)}
+                      onClick={() => handleSelectSong(s.id)}
                       className="w-full text-left px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 flex flex-col"
                     >
                       <span className="font-bold text-gray-900 dark:text-gray-100">{s.title}</span>
@@ -556,7 +311,7 @@ const App: React.FC = () => {
               <div className="relative">
                 <select
                   aria-label="Transpose Key"
-                  className="appearance-none bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                  className="appearance-none bg-transparent font-bold text-gray-900 dark:text-white text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
                   value={keyInfo.currentKey}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -568,8 +323,8 @@ const App: React.FC = () => {
                   }}
                 >
                   {CHROMATIC_SCALE.map((note) => (
-                    <option key={note} value={note + keyInfo.suffix}>
-                      {note + keyInfo.suffix}
+                    <option key={note} value={note + keyInfo.suffix} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                      {getKeyLabel(note, keyInfo.suffix)}
                     </option>
                   ))}
                 </select>
@@ -597,12 +352,12 @@ const App: React.FC = () => {
             <div className="relative">
               <select
                 aria-label="Font Size"
-                className="appearance-none bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                className="appearance-none bg-transparent font-bold text-gray-900 dark:text-white text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
                 value={user.settings.fontSize}
                 onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
               >
                 {[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48].map((size) => (
-                  <option key={size} value={size}>{size}</option>
+                  <option key={size} value={size} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">{size}</option>
                 ))}
               </select>
             </div>
@@ -639,10 +394,10 @@ const App: React.FC = () => {
               transpose={transpose}
               activeSetlist={activeSetlist}
               activeSetlistIndex={activeSetlistIndex}
-              onNextSong={() => handleSetlistNav('next')}
-              onPrevSong={() => handleSetlistNav('prev')}
-              onSetlistJump={(idx) => handleSetlistNav(idx)}
-              onExitSetlist={handleExitSetlist}
+              onNextSong={() => navigateSetlist('next')}
+              onPrevSong={() => navigateSetlist('prev')}
+              onSetlistJump={(idx) => navigateSetlist(idx)}
+              onExitSetlist={exitSetlist}
               allSongs={allSongs}
             />
             <SongNavigator 
@@ -663,12 +418,12 @@ const App: React.FC = () => {
         {view === 'RECENT_SONGS' && (
           <RecentSongsView 
             songs={allSongs.slice(0, 50)}
-            onSelectSong={selectSong}
+            onSelectSong={handleSelectSong}
             onEditSong={(song) => {
               setSongToEdit(song);
               setView('SONG_FORM');
             }}
-            onDeleteSong={handleDeleteSpecificSong}
+            onDeleteSong={deleteSpecificSong}
             onBack={() => setView('SONG_VIEW')}
           />
         )}
@@ -676,8 +431,8 @@ const App: React.FC = () => {
           <SetlistManager
             setlists={setlists}
             allSongs={allSongs}
-            onSave={handleSaveSetlist}
-            onDelete={handleDeleteSetlist}
+            onSave={saveSetlist}
+            onDelete={deleteSetlist}
             onPlay={handlePlaySetlist}
             onClose={() => setView('SONG_VIEW')}
           />
@@ -720,34 +475,47 @@ const App: React.FC = () => {
 
             <nav className="p-4 space-y-1">
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Song Management</p>
-              <button 
-                onClick={() => { setSongToEdit(undefined); setView('SONG_FORM'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
-              >
-                <i className="fa-solid fa-plus w-6"></i>
-                <span className="font-medium">Add New Song</span>
-              </button>
-              <button 
-                onClick={() => { setSongToEdit(currentSong || undefined); setView('SONG_FORM'); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
-              >
-                <i className="fa-solid fa-pen-to-square w-6"></i>
-                <span className="font-medium">Edit Current Song</span>
-              </button>
-              <button 
-                onClick={() => { handleDeleteSong(); setMenuOpen(false); }}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
-              >
-                <i className="fa-solid fa-trash w-6"></i>
-                <span className="font-medium">Delete Current Song</span>
-              </button>
+              {/* "Add New Song" for Admin and Premium */}
+              {(user.role === UserRole.ADMIN || user.role === UserRole.PREMIUM) && (
+                <button 
+                  onClick={() => { setSongToEdit(undefined); setView('SONG_FORM'); setMenuOpen(false); }}
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                >
+                  <i className="fa-solid fa-plus w-6"></i>
+                  <span className="font-medium">Add New Song</span>
+                </button>
+              )}
+
+              {/* "Edit Current Song" for Admin (always) or Premium (if owner) */}
+              {(user.role === UserRole.ADMIN || (user.role === UserRole.PREMIUM && currentSong?.ownerId === user.id)) && (
+                <button 
+                  onClick={() => { if (currentSong) { setSongToEdit(currentSong); setView('SONG_FORM'); setMenuOpen(false); } }}
+                  disabled={!currentSong}
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <i className="fa-solid fa-pen-to-square w-6"></i>
+                  <span className="font-medium">Edit Current Song</span>
+                </button>
+              )}
+
+              {/* "Delete Current Song" for Admin (always) or Premium (if owner) */}
+              {(user.role === UserRole.ADMIN || (user.role === UserRole.PREMIUM && currentSong?.ownerId === user.id)) && (
+                <button 
+                  onClick={() => { handleDeleteSong(); setMenuOpen(false); }}
+                  disabled={!currentSong}
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <i className="fa-solid fa-trash w-6"></i>
+                  <span className="font-medium">Delete Current Song</span>
+                </button>
+              )}
 
               <div className="my-4 border-t border-gray-100 dark:border-gray-700" />
               
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Playlists</p>
               {activeSetlist && (
                 <button 
-                  onClick={() => { handleExitSetlist(); setMenuOpen(false); }}
+                  onClick={() => { exitSetlist(); setMenuOpen(false); }}
                   className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors mb-2"
                 >
                   <i className="fa-solid fa-circle-stop w-6"></i>

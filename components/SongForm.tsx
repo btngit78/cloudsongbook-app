@@ -77,6 +77,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   };
 
   const handleSave = () => {
+    console.log("Attempting to save song with data:", formData);
     if (!formData.title || formData.title.length > 80) {
       setError('Title is required and must be max 80 characters.');
       return;

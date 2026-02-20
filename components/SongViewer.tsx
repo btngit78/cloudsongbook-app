@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Song, UserSettings } from '../types';
 import { SetList } from '../types';
 
@@ -19,12 +19,41 @@ interface SongViewerProps {
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+const SHARP_TO_FLAT: Record<string, string> = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
 
 const SongViewer: React.FC<SongViewerProps> = ({ 
   song, settings, onUpdateSettings, transpose,
   activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
+  const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
+
+  // Determine if we should use flats for the target key based on user preference rules
+  const useFlats = useMemo(() => {
+    const match = song.key.match(/^([A-G][#b]?)/);
+    const root = match ? match[1] : 'C';
+    let normalizedRoot = root;
+    if (FLAT_MAP[root]) normalizedRoot = FLAT_MAP[root];
+    
+    const originalIndex = CHROMATIC_SCALE.indexOf(normalizedRoot);
+    let targetIndex = (originalIndex + transpose) % 12;
+    if (targetIndex < 0) targetIndex += 12;
+    
+    // Rules:
+    // 1. A#(10), D#(3), G#(8) -> Always Flats (Bb, Eb, Ab)
+    if ([3, 8, 10].includes(targetIndex)) return true;
+    
+    // 2. F#(6) -> Gb unless original was F(5) (semitone up)
+    if (targetIndex === 6) return originalIndex !== 5;
+    
+    // 3. C#(1) -> Db unless original was C(0) (semitone up)
+    if (targetIndex === 1) return originalIndex !== 0;
+    
+    // 4. F(5) -> Standard theory uses flats (Bb)
+    if (targetIndex === 5) return true;
+
+    return false;
+  }, [song.key, transpose]);
 
   const chordClass = (settings.chordColor === '' || settings.chordColor === 'amber') 
     ? 'text-blue-600 dark:text-amber-400'   // default chord color for both themes
@@ -51,7 +80,11 @@ const SongViewer: React.FC<SongViewerProps> = ({
       let newIndex = (index + offset) % 12;
       if (newIndex < 0) newIndex += 12;
 
-      return CHROMATIC_SCALE[newIndex] + suffix;
+      const note = CHROMATIC_SCALE[newIndex];
+      if (useFlats && SHARP_TO_FLAT[note]) {
+        return SHARP_TO_FLAT[note] + suffix;
+      }
+      return note + suffix;
     }).join('/');
   };
 
@@ -164,8 +197,27 @@ const SongViewer: React.FC<SongViewerProps> = ({
             className="text-gray-500 dark:text-gray-400 italic font-medium leading-none"
             style={{ fontSize: `${settings.fontSize * 0.66}px` }}
           >
-            By {song.authors || 'Unknown'} {song.tempo ? `-- ${song.tempo} BPM` : ''}
+            By {song.authors || 'Unknown'} {(currentChoice?.tempo || song.tempo) ? `-- ${currentChoice?.tempo || song.tempo} BPM` : ''}
           </p>
+          {currentChoice && (
+            <div className="flex flex-wrap gap-2 mt-1.5">
+              {currentChoice.singer && (
+                <span className="text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                  <i className="fa-solid fa-microphone mr-1"></i>{currentChoice.singer}
+                </span>
+              )}
+              {currentChoice.key && (
+                <span className="text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                  Key: {currentChoice.key}
+                </span>
+              )}
+              {currentChoice.style && (
+                <span className="text-[10px] font-bold bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">
+                  {currentChoice.style}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Setlist HUD */}
@@ -186,13 +238,13 @@ const SongViewer: React.FC<SongViewerProps> = ({
                 className="px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px]">{activeSetlist.name}:</span>
-                <span className="text-gray-900 dark:text-gray-100 text-sm">{activeSetlistIndex + 1}/{activeSetlist.songIds.length}</span>
+                <span className="text-gray-900 dark:text-gray-100 text-sm">{activeSetlistIndex + 1}/{activeSetlist.choices.length}</span>
               </button>
 
               <button
                 aria-label="Next Song" 
                 onClick={onNextSong}
-                disabled={activeSetlistIndex >= activeSetlist.songIds.length - 1}
+                disabled={activeSetlistIndex >= activeSetlist.choices.length - 1}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
                 <i className="fa-solid fa-forward-step"></i>
@@ -212,8 +264,8 @@ const SongViewer: React.FC<SongViewerProps> = ({
             {/* Dropdown List */}
             {hudOpen && (
               <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden max-h-64 overflow-y-auto">
-                {activeSetlist.songIds.map((sid, idx) => {
-                  const sTitle = allSongs?.find(s => s.id === sid)?.title || 'Unknown';
+                {activeSetlist.choices.map((choice, idx) => {
+                  const sTitle = allSongs?.find(s => s.id === choice.songId)?.title || 'Unknown';
                   return (
                     <button
                       key={idx}

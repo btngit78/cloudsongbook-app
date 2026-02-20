@@ -15,11 +15,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && getUserRole() == 'ADMIN';
+      return isAuthenticated() && getUserRole() == 'admin';
     }
 
     function isPremium() {
-      return isAuthenticated() && getUserRole() == 'PREMIUM';
+      return isAuthenticated() && getUserRole() == 'premium';
     }
 
     // --- Setlists Rules ---
@@ -27,20 +27,20 @@ service cloud.firestore {
       // 1. Read: Everyone (Admin, Premium, Free) can read all setlists
       allow read: if isAuthenticated();
 
-      // 2. Create: Admin can create any; Premium must be the owner
-      allow create: if isAdmin() || (isPremium() && request.resource.data.ownerId == request.auth.uid);
+      // 2. Create: Admin can create any; Authenticated users can create their own.
+      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.ownerId == request.auth.uid);
 
-      // 3. Update: Admin can update any; Premium must be the owner of the existing doc AND keep ownership
-      allow update: if isAdmin() || (isPremium() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid);
+      // 3. Update: Admin can update any; Authenticated users can update their own.
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid);
 
-      // 4. Delete: Admin can delete any; Premium must be the owner of the existing doc
-      allow delete: if isAdmin() || (isPremium() && resource.data.ownerId == request.auth.uid);
+      // 4. Delete: Admin can delete any; Authenticated users can delete their own.
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.ownerId == request.auth.uid);
     }
 
     // --- Users Collection (Required for app logic) ---
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == 'FREE');
+      allow create: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == 'free');
       allow update: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role);
       allow delete: if isAdmin() || request.auth.uid == userId;
     }
@@ -48,7 +48,9 @@ service cloud.firestore {
     // --- Songs Collection (Contextual) ---
     match /songs/{songId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create: if isAdmin() || (isPremium() && request.resource.data.ownerId == request.auth.uid);
+      allow update: if isAdmin() || (isPremium() && resource.data.ownerId == request.auth.uid);
+      allow delete: if isAdmin() || (isPremium() && resource.data.ownerId == request.auth.uid);
     }
   }
 }

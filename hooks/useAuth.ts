@@ -50,10 +50,12 @@ export const useAuth = () => {
 
   const handleSignInSuccess = async (firebaseUser: FirebaseUser) => {
     try {
-      const userAuthData: Partial<User> = {
+      const userAuthData: User = {
         id: firebaseUser.uid,
         name: firebaseUser.displayName || firebaseUser.email!.split('@')[0],
         email: firebaseUser.email!,
+        role: UserRole.FREE,
+        settings: { ...MOCK_USER.settings }
       };
 
       const syncedUser = await dbService.syncUser(userAuthData);
