@@ -1,8 +1,7 @@
-// c:\Users\ntdt7\cloudsongbook-app\services\dbService.ts
 import { db } from '../firebaseConfig';
 import { 
   collection, doc, getDocs, getDoc, setDoc, deleteDoc, 
-  query, where, orderBy, limit 
+  query, where, orderBy, limit, writeBatch, getFirestore
 } from 'firebase/firestore';
 import { Song, User, SetList, UserSettings, UserRole } from '../types';
 
@@ -54,7 +53,7 @@ export const dbService = {
       authors: song.authors|| 'Unknown',
       body: song.body || '',
       key: song.key || 'C',
-      tempo: song.tempo || 120,
+      tempo: song.tempo || 0,
       keywords: song.keywords || [],
       language: song.language || 'English',
       isPdf: song.isPdf || false,
@@ -165,5 +164,53 @@ export const dbService = {
     const filtered = current.filter(s => s.id !== song.id);
     const updated = [song, ...filtered].slice(0, 40); // Limit 40
     localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
-  }
+  },
+
+
+/**
+ * Deletes a user and handles their content based on the chosen option.
+ * This function should be called by a secure backend endpoint, not directly
+ * from the client in a production app.
+ */
+async deleteUserAndContent(userId: string, contentOption: 'transfer' | 'delete', adminId: string): Promise<void> {
+  console.log(`Deleting user ${userId} with option: ${contentOption}`);
+  
+  // In a real Firestore implementation:
+  const db = getFirestore();
+  const songsRef = collection(db, 'songs');
+  const setlistsRef = collection(db, 'setlists');
+  const userSongsQuery = query(songsRef, where('ownerId', '==', userId));
+  const userSetlistsQuery = query(setlistsRef, where('ownerId', '==', userId));
+
+  const songsSnapshot = await getDocs(userSongsQuery);
+  const setlistsSnapshot = await getDocs(userSetlistsQuery);
+  
+  const batch = writeBatch(db);
+
+  songsSnapshot.forEach(doc => {
+    if (contentOption === 'delete') {
+      batch.delete(doc.ref);
+    } else { // transfer
+      batch.update(doc.ref, { ownerId: adminId });
+    }
+  });
+  
+  setlistsSnapshot.forEach(doc => {
+    if (contentOption === 'delete') {
+      batch.delete(doc.ref);
+    } else { // transfer
+      batch.update(doc.ref, { ownerId: adminId });
+    }
+  });
+
+  // Delete the user document itself
+  const userDocRef = doc(db, 'users', userId);
+  batch.delete(userDocRef);
+
+  await batch.commit();
+
+  // For the mock service, we can just log it.
+  return Promise.resolve();
+}
+
 };

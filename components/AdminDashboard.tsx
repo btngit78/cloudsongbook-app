@@ -10,6 +10,10 @@ interface AdminDashboardProps {
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  // State for deletion modal
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -34,6 +38,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
       // Revert on failure
       const fetchedUsers = await dbService.getAllUsers();
       setUsers(fetchedUsers);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    setIsDeleting(true);
+
+    try {
+      // In a real app, this would call your backend service.
+      await dbService.deleteUserAndContent(userToDelete.id, contentOption, currentUser.id);
+
+      // IMPORTANT: Deleting a user from Firebase Authentication requires the Admin SDK
+      // on a backend server (e.g., Cloud Function). This is a simulation.
+      console.log(`Simulating deletion of user ${userToDelete.id} with content option: ${contentOption}`);
+
+      // Optimistically update the UI
+      setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
+      setUserToDelete(null); // Close modal
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+      // In a real app, you might want to revert the optimistic update here.
+      alert("An error occurred while deleting the user. See console for details.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -62,7 +91,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-64">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -88,22 +117,88 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      <select
-                        aria-label="User Role"
-                        value={user.role}
-                        onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
-                        disabled={user.id === currentUser.id}
-                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
-                      >
-                        <option value={UserRole.FREE}>FREE</option>
-                        <option value={UserRole.PREMIUM}>PREMIUM</option>
-                        <option value={UserRole.ADMIN}>ADMIN</option>
-                      </select>
+                      <div className="flex items-center space-x-2">
+                        <select
+                          aria-label="User Role"
+                          value={user.role}
+                          onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
+                          disabled={user.id === currentUser.id}
+                          className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
+                        >
+                          <option value={UserRole.FREE}>FREE</option>
+                          <option value={UserRole.PREMIUM}>PREMIUM</option>
+                          <option value={UserRole.ADMIN}>ADMIN</option>
+                        </select>
+                        <button
+                          onClick={() => setUserToDelete(user)}
+                          disabled={user.id === currentUser.id || user.role === UserRole.ADMIN}
+                          className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete User"
+                        >
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Deletion Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Delete User</h3>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              You are about to permanently delete the user{' '}
+              <strong className="text-red-600 dark:text-red-400">{userToDelete.name} ({userToDelete.email})</strong>.
+              This action cannot be undone.
+            </p>
+
+            <div className="mt-6">
+              <p className="font-bold text-sm text-gray-800 dark:text-gray-200">Handle User's Content</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Choose what to do with songs and setlists owned by this user.</p>
+              <div className="space-y-3">
+                <label className="flex items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="content-option" 
+                    value="transfer"
+                    checked={contentOption === 'transfer'}
+                    onChange={() => setContentOption('transfer')}
+                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <div className="ml-3 text-sm">
+                    <p className="font-medium text-gray-900 dark:text-gray-100">Transfer content to me (Admin)</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">All songs and setlists will be reassigned to your account.</p>
+                  </div>
+                </label>
+                <label className="flex items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="content-option" 
+                    value="delete"
+                    checked={contentOption === 'delete'}
+                    onChange={() => setContentOption('delete')}
+                    className="h-4 w-4 text-red-600 border-gray-300 focus:ring-red-500"
+                  />
+                  <div className="ml-3 text-sm">
+                    <p className="font-medium text-gray-900 dark:text-gray-100">Delete all content</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">All songs and setlists owned by this user will be permanently deleted.</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end space-x-3">
+              <button onClick={() => setUserToDelete(null)} disabled={isDeleting} className="px-4 py-2 text-gray-700 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={handleDeleteUser} disabled={isDeleting} className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-lg shadow-red-200 dark:shadow-none transition-all disabled:bg-red-400 disabled:cursor-wait">
+                {isDeleting ? 'Deleting...' : `Delete ${userToDelete.name}`}
+              </button>
+            </div>
           </div>
         </div>
       )}

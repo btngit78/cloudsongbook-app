@@ -39,7 +39,7 @@ export const MOCK_USER: User = {
   id: 'u1',
   name: 'John Doe',
   email: 'john@example.com',
-  role: UserRole.PREMIUM,
+  role: UserRole.FREE,
   settings: {
     fontSize: 18,
     showChords: true,

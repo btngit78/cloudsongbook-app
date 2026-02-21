@@ -39,7 +39,7 @@ service cloud.firestore {
 
     // --- Users Collection (Required for app logic) ---
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if (request.auth != null);
       allow create: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == 'free');
       allow update: if isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role);
       allow delete: if isAdmin() || request.auth.uid == userId;

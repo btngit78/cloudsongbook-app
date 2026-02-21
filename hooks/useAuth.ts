@@ -90,6 +90,10 @@ export const useAuth = () => {
       await signOut(auth); // User must verify before they can log in.
       
       setVerificationSent(true);
+
+      // Simplified: Log in immediately
+      // await handleSignInSuccess(firebaseUser);
+      
       setIsSignUp(false);
       setAuthError(null);
     } catch (error: any) {
