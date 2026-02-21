@@ -18,6 +18,9 @@ import { useSongs } from './hooks/useSong';
 import { useSetlists } from './hooks/useSetlists';
 import { useScroll } from './hooks/useScroll';
 import { useTranspose } from './hooks/useTranspose';
+import { Header } from './components/Header';
+import { SongList } from './components/SongList';
+import { useSongSearch } from './hooks/useSongSearch';
 
 const App: React.FC = () => {
   const { 
@@ -39,10 +42,6 @@ const App: React.FC = () => {
   const {
     allSongs,
     currentSong,
-    searchOpen,
-    setSearchOpen,
-    searchQuery,
-    searchResults,
     selectSong,
     handleSearch,
     saveSong,
@@ -50,9 +49,12 @@ const App: React.FC = () => {
     deleteSpecificSong
   } = useSongs();
 
+  const { searchQuery, setSearchQuery, filteredSongs } = useSongSearch(allSongs);
+
   const [view, setView] = useState<ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD'>('SONG_VIEW');
   const [menuOpen, setMenuOpen] = useState(false);
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
+  const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
 
   // Sync theme
   const { setTheme } = useTheme();
@@ -61,6 +63,8 @@ const App: React.FC = () => {
     const song = await selectSong(songId);
     if (song) {
       setView('SONG_VIEW');
+      setSearchQuery('');
+      setIsHeaderSearchActive(false);
     }
   }, [selectSong]);
 
@@ -116,10 +120,6 @@ const App: React.FC = () => {
     if (deleted) {
       setView('SONG_VIEW');
     }
-  };
-
-  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSearch(e.target.value);
   };
 
   const handlePlaySetlist = (setlist: SetList) => {
@@ -246,138 +246,93 @@ const App: React.FC = () => {
     <div className="h-screen overflow-hidden flex flex-col">
       <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-16 sticky top-0 z-30 flex items-center px-4 md:px-6 shadow-sm transition-colors">
-        <button 
-          aria-label="Open Menu"
-          onClick={() => setMenuOpen(true)}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-        >
-          <i className="fa-solid fa-bars text-xl text-gray-700 dark:text-gray-200"></i>
-        </button>
-
-        <div className={`flex-1 mx-4 flex items-center overflow-hidden transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
-          {searchOpen ? (
-            <div className="relative w-full max-w-lg">
-              <input
-                autoFocus
-                type="text"
-                placeholder="Search songs..."
-                className="w-full py-2 pl-4 pr-10 rounded-xl bg-gray-100 dark:bg-gray-700 dark:text-white border-none focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-500 dark:placeholder-gray-400"
-                value={searchQuery}
-                onChange={handleSearchInput}
-                onBlur={() => !searchQuery && setSearchOpen(false)}
-              />
-              <button aria-label="Search" 
-                className="absolute right-3 top-2 text-gray-400">
-                <i className="fa-solid fa-magnifying-glass"></i>
-              </button>
-              {searchResults.length > 0 && (
-                <div className="absolute top-12 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-                  {searchResults.slice(0, 5).map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => handleSelectSong(s.id)}
-                      className="w-full text-left px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 flex flex-col"
-                    >
-                      <span className="font-bold text-gray-900 dark:text-gray-100">{s.title}</span>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">{s.authors}</span>
-                    </button>
-                  ))}
+      <Header
+        title={currentSong?.title || "CloudSongBook"}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onMenuClick={() => setMenuOpen(true)}
+        isSearchActive={isHeaderSearchActive}
+        onSearchActiveChange={setIsHeaderSearchActive}
+        rightContent={
+          <div className={`hidden md:flex items-center space-x-2 transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
+            {currentSong?.key && keyInfo && (
+              <div 
+                className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 select-none"
+                onDoubleClick={() => setTranspose(0)}
+                title="Double-click to reset key"
+              >
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Key:</span>
+                <div className="relative">
+                  <select
+                    aria-label="Transpose Key"
+                    className="appearance-none bg-transparent font-bold text-gray-900 dark:text-white text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                    value={keyInfo.currentKey}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Remove suffix to find root
+                      const selectedRoot = val.replace(keyInfo!.suffix, '');
+                      const targetIndex = CHROMATIC_SCALE.indexOf(selectedRoot);
+                      const diff = targetIndex - keyInfo!.originalIndex;
+                      setTranspose(diff);
+                    }}
+                  >
+                    {CHROMATIC_SCALE.map((note) => (
+                      <option key={note} value={note + keyInfo.suffix} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                        {getKeyLabel(note, keyInfo.suffix)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
-            </div>
-          ) : (
-            <div 
-              onClick={() => setSearchOpen(true)}
-              className="flex-1 flex items-center justify-between cursor-pointer group"
-            >
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate max-w-[200px] md:max-w-md">
-                {currentSong?.title || "Select a Song"}
-              </h2>
-              <i className="fa-solid fa-magnifying-glass text-gray-400 dark:text-gray-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors ml-4"></i>
-            </div>
-          )}
-        </div>
+                
+                <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
+                  <button aria-label="Up a semitone"
+                    onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                    <i className="fa-solid fa-caret-up text-[10px]"></i>
+                  </button>
+                  <button aria-label="Down a semitone"
+                    onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                    <i className="fa-solid fa-caret-down text-[10px]"></i>
+                  </button>
+                </div>
+              </div>
+            )}
 
-        {/* Extra Info Area */}
-        <div className={`hidden md:flex items-center space-x-2 transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
-          {currentSong?.key && keyInfo && (
             <div 
-              className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 select-none"
-              onDoubleClick={() => setTranspose(0)}
-              title="Double-click to reset key"
+              className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 ml-2 select-none"
+              onDoubleClick={() => handleUpdateSettings({ fontSize: 18 })}
+              title="Double-click to reset zoom"
             >
-              <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Key:</span>
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Zoom:</span>
               <div className="relative">
                 <select
-                  aria-label="Transpose Key"
+                  aria-label="Font Size"
                   className="appearance-none bg-transparent font-bold text-gray-900 dark:text-white text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
-                  value={keyInfo.currentKey}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    // Remove suffix to find root
-                    const selectedRoot = val.replace(keyInfo!.suffix, '');
-                    const targetIndex = CHROMATIC_SCALE.indexOf(selectedRoot);
-                    const diff = targetIndex - keyInfo!.originalIndex;
-                    setTranspose(diff);
-                  }}
+                  value={user.settings.fontSize}
+                  onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
                 >
-                  {CHROMATIC_SCALE.map((note) => (
-                    <option key={note} value={note + keyInfo.suffix} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                      {getKeyLabel(note, keyInfo.suffix)}
-                    </option>
+                  {[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48].map((size) => (
+                    <option key={size} value={size} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">{size}</option>
                   ))}
                 </select>
               </div>
               
               <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
-                <button aria-label="Up a semitone"
-                  onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                <button 
+                  aria-label="Increase Font Size"
+                  onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })}
+                  className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                   <i className="fa-solid fa-caret-up text-[10px]"></i>
                 </button>
-                <button aria-label="Down a semitone"
-                  onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                <button 
+                  aria-label="Decrease Font Size"
+                  onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
                   <i className="fa-solid fa-caret-down text-[10px]"></i>
                 </button>
               </div>
             </div>
-          )}
-
-          <div 
-            className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 ml-2 select-none"
-            onDoubleClick={() => handleUpdateSettings({ fontSize: 18 })}
-            title="Double-click to reset zoom"
-          >
-            <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Zoom:</span>
-            <div className="relative">
-              <select
-                aria-label="Font Size"
-                className="appearance-none bg-transparent font-bold text-gray-900 dark:text-white text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
-                value={user.settings.fontSize}
-                onChange={(e) => handleUpdateSettings({ fontSize: parseInt(e.target.value) })}
-              >
-                {[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48].map((size) => (
-                  <option key={size} value={size} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">{size}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
-              <button 
-                aria-label="Increase Font Size"
-                onClick={() => handleUpdateSettings({ fontSize: Math.min(48, user.settings.fontSize + 2) })}
-                className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
-                <i className="fa-solid fa-caret-up text-[10px]"></i>
-              </button>
-              <button 
-                aria-label="Decrease Font Size"
-                onClick={() => handleUpdateSettings({ fontSize: Math.max(12, user.settings.fontSize - 2) })} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
-                <i className="fa-solid fa-caret-down text-[10px]"></i>
-              </button>
-            </div>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Main Content */}
       <main 
@@ -385,6 +340,13 @@ const App: React.FC = () => {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto relative"
       >
+        {searchQuery ? (
+          <SongList 
+            songs={filteredSongs} 
+            onSongClick={(song) => handleSelectSong(song.id)}
+          />
+        ) : (
+          <>
         {view === 'SONG_VIEW' && currentSong && (
           <>
             <SongViewer 
@@ -452,6 +414,8 @@ const App: React.FC = () => {
             currentUser={user}
             onBack={() => setView('SONG_VIEW')}
           />
+        )}
+          </>
         )}
       </main>
 
