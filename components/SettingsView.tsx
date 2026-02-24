@@ -46,6 +46,34 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
           </button>
         </div>
 
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Highlight Search Terms</span>
+          <button 
+            aria-label="Toggle Highlight Search"
+            onClick={() => setSettings({ ...settings, highlightSearch: !(settings.highlightSearch ?? false) })}
+            className={`w-12 h-6 rounded-full transition-colors relative ${settings.highlightSearch ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+          >
+            <div className={`absolute top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.highlightSearch ? 'left-7' : 'left-1'}`} />
+          </button>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Setlist Transpose Mode</label>
+            <select
+              aria-label="Setlist Transpose Mode"
+              value={settings.setlistTransposeMode || 'off'}
+              onChange={(e) => setSettings({ ...settings, setlistTransposeMode: e.target.value as 'auto' | 'confirm' | 'off' })}
+              className="rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm py-1.5"
+            >
+              <option value="off">Off (Default)</option>
+              <option value="auto">Auto</option>
+              <option value="confirm">Confirm</option>
+            </select>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Controls how keys are handled when playing a setlist.</p>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font Size ({settings.fontSize}px)</label>
           <input 

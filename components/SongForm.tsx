@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
+import { useMetronome } from '../hooks/useMetronome.ts';
 
 interface SongFormProps {
   song?: Song;
@@ -29,11 +30,26 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { 
+    tempo: metronomeTempo, 
+    tap: handleTap, 
+    active: metronomeActive, 
+    toggle: toggleMetronome, 
+    beatFlash 
+  } = useMetronome(formData.tempo);
+
   useEffect(() => {
     if (song) {
       setFormData(song);
     }
   }, [song]);
+
+  // Sync tapped tempo back to form
+  useEffect(() => {
+    if (metronomeTempo !== undefined && metronomeTempo !== formData.tempo) {
+      setFormData(prev => ({ ...prev, tempo: metronomeTempo }));
+    }
+  }, [metronomeTempo]);
 
   const handleFile = (file: File) => {
     if (file.type !== 'application/pdf') {
@@ -88,8 +104,8 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
       setError('Keywords must be alpha-numeric (international allowed) and hyphen only, separated by spaces.');
       return;
     }
-    if (formData.tempo !== undefined && (formData.tempo <= 0 || formData.tempo > 400)) {
-      setError('Tempo must be a positive number less than or equal to 400.');
+    if (formData.tempo !== undefined && (formData.tempo < 0 || formData.tempo > 400)) {
+      setError('Tempo must be a positive number (or 0) less than or equal to 400.');
       return;
     }
     if (formData.isPdf && !formData.pdfData) {
@@ -192,15 +208,39 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
           {/* Tempo */}
           <div className="md:col-span-1">
             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Tempo (BPM)</label>
-            <input
-              type="number"
-              min={1}
-              max={400}
-              placeholder="e.g., 120"
-              className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
-              value={formData.tempo || ''}
-              onChange={e => setFormData({ ...formData, tempo: parseInt(e.target.value) || undefined })}
-            />
+            <div className="flex space-x-2">
+              <input
+                type="number"
+                min={0}
+                max={400}
+                placeholder="e.g., 120"
+                className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
+                value={formData.tempo ?? ''}
+                onChange={e => setFormData({ ...formData, tempo: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+              />
+              <button
+                type="button"
+                onClick={handleTap}
+                className="px-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold rounded-xl border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Tap Tempo"
+              >
+                TAP
+              </button>
+              <button
+                type="button"
+                onClick={toggleMetronome}
+                className={`px-3 rounded-xl border transition-colors ${metronomeActive ? 'bg-blue-100 border-blue-200 text-blue-600 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-400'}`}
+                title="Toggle Metronome"
+              >
+                <i className="fa-solid fa-stopwatch"></i>
+              </button>
+            </div>
+            {metronomeActive && (
+              <div className="mt-2 flex items-center gap-2 animate-fadeIn">
+                <div className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Metronome Active</span>
+              </div>
+            )}
           </div>
 
           {/* Keywords */}

@@ -17,9 +17,11 @@ export interface User {
 export interface UserSettings {
   fontSize: number;
   showChords: boolean;
+  highlightSearch?: boolean;
   theme: 'light' | 'dark' | 'system';
   chordColor: string; // For dark theme
   sectionColor: string; // For dark theme
+  setlistTransposeMode?: 'auto' | 'confirm' | 'off';
 }
 
 export interface Song {

@@ -9,6 +9,7 @@ interface HeaderProps {
   onSearchActiveChange?: (isActive: boolean) => void;
   rightContent?: React.ReactNode;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  menuOpen?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,7 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   isSearchActive: controlledSearchActive,
   onSearchActiveChange,
   rightContent,
-  onKeyDown
+  onKeyDown,
+  menuOpen = false
 }) => {
   const [localSearchActive, setLocalSearchActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isSearchActive, handleCloseSearch]);
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm h-16 flex items-center px-4 transition-colors duration-200">
+    <header className={`sticky top-0 w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm h-16 flex items-center px-4 transition-all duration-200 ${menuOpen ? 'z-30 blur-sm pointer-events-none' : 'z-50'}`}>
       {isSearchActive ? (
         // Search Mode View
         <div ref={searchContainerRef} className="flex-1 flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-200">

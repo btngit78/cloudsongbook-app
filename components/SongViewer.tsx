@@ -2,12 +2,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Song, UserSettings } from '../types';
 import { SetList } from '../types';
+import { useMetronome } from '../hooks/useMetronome.ts';
 
 interface SongViewerProps {
   song: Song;
   settings: UserSettings;
   onUpdateSettings: (newSettings: Partial<UserSettings>) => void;
   transpose: number;
+  onTranspose?: (val: number) => void;
   activeSetlist?: SetList | null;
   activeSetlistIndex?: number;
   onNextSong?: () => void;
@@ -22,12 +24,19 @@ const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', '
 const SHARP_TO_FLAT: Record<string, string> = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
 
 const SongViewer: React.FC<SongViewerProps> = ({ 
-  song, settings, onUpdateSettings, transpose,
+  song, settings, onUpdateSettings, transpose, onTranspose,
   activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
   const hudRef = useRef<HTMLDivElement>(null);
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
+  const displayTempo = currentChoice?.tempo || song.tempo;
+  
+  const { tempo: effectiveTempo, setTempo: setLocalTempo, active: metronomeActive, toggle: toggleMetronome, beatFlash, tap: handleTap, reset: resetMetronome } = useMetronome(displayTempo);
+
+  useEffect(() => {
+    resetMetronome();
+  }, [song.id, activeSetlistIndex]);
 
   useEffect(() => {
     if (!hudOpen) return;
@@ -46,8 +55,9 @@ const SongViewer: React.FC<SongViewerProps> = ({
 
   // Determine if we should use flats for the target key based on user preference rules
   const useFlats = useMemo(() => {
-    const match = song.key.match(/^([A-G][#b]?)/);
+    const match = song.key.match(/^([A-G][#b]?)(m)?/);
     const root = match ? match[1] : 'C';
+    const isMinor = !!(match && match[2]);
     let normalizedRoot = root;
     if (FLAT_MAP[root]) normalizedRoot = FLAT_MAP[root];
     
@@ -55,6 +65,12 @@ const SongViewer: React.FC<SongViewerProps> = ({
     let targetIndex = (originalIndex + transpose) % 12;
     if (targetIndex < 0) targetIndex += 12;
     
+    // Minor Key Specific Rules
+    if (isMinor) {
+      // Dbm(1) -> C#m, Gbm(6) -> F#m, Abm(8) -> G#m
+      if ([1, 6, 8].includes(targetIndex)) return false;
+    }
+
     // Rules:
     // 1. A#(10), D#(3), G#(8) -> Always Flats (Bb, Eb, Ab)
     if ([3, 8, 10].includes(targetIndex)) return true;
@@ -205,16 +221,76 @@ const SongViewer: React.FC<SongViewerProps> = ({
     });
   };
 
+  const handleQuickTranspose = () => {
+    if (!currentChoice?.key || !onTranspose) return;
+    
+    const targetKey = currentChoice.key;
+    const match = targetKey.match(/^([A-G][#b]?)/);
+    if (!match) return;
+    
+    let targetRoot = match[1];
+    if (FLAT_MAP[targetRoot]) targetRoot = FLAT_MAP[targetRoot];
+    
+    const targetIndex = CHROMATIC_SCALE.indexOf(targetRoot);
+    
+    // Get original key
+    const originalMatch = song.key.match(/^([A-G][#b]?)/);
+    if (!originalMatch) return;
+    
+    let originalRoot = originalMatch[1];
+    if (FLAT_MAP[originalRoot]) originalRoot = FLAT_MAP[originalRoot];
+    const originalIndex = CHROMATIC_SCALE.indexOf(originalRoot);
+    
+    if (targetIndex === -1 || originalIndex === -1) return;
+
+    let diff = targetIndex - originalIndex;
+    if (diff > 6) diff -= 12;
+    if (diff < -6) diff += 12;
+    
+    onTranspose(diff);
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
       <header className="mb-4 pb-2 flex justify-between items-end">
         <div className="text-left">
-          <p 
-            className="text-gray-500 dark:text-gray-400 italic font-medium leading-none"
+          <div 
+            className="text-gray-500 dark:text-gray-400 italic font-medium leading-none flex items-center flex-wrap gap-y-1"
             style={{ fontSize: `${settings.fontSize * 0.66}px` }}
           >
-            By {song.authors || 'Unknown'} {(currentChoice?.tempo || song.tempo) ? `-- ${currentChoice?.tempo || song.tempo} BPM` : ''}
-          </p>
+            <span>By {song.authors || 'Unknown'}</span>
+            <div className="flex items-center gap-2 border-l border-gray-300 dark:border-gray-600 pl-2 ml-2">
+              <input
+                type="number"
+                min={0}
+                max={400}
+                value={effectiveTempo ?? ''}
+                onChange={(e) => setLocalTempo(e.target.value === '' ? undefined : parseInt(e.target.value))}
+                className="w-14 bg-transparent text-gray-500 dark:text-gray-400 font-medium p-0 border-none focus:ring-0 text-right"
+                placeholder="---"
+                title="Adjust tempo temporarily"
+              />
+              <span className="text-gray-400 dark:text-gray-500 -ml-2">BPM</span>
+              <button
+                onClick={handleTap}
+                className="ml-1 px-2 py-0.5 text-[10px] font-bold border border-gray-300 dark:border-gray-600 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-blue-100 dark:active:bg-blue-900 transition-colors select-none"
+                title="Tap to set tempo"
+              >
+                TAP
+              </button>
+              <button
+                onClick={toggleMetronome}
+                disabled={!effectiveTempo || effectiveTempo <= 0}
+                className={`w-5 h-5 flex items-center justify-center rounded-full transition-all ${metronomeActive ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={metronomeActive ? "Stop Metronome" : "Start Metronome"}
+              >
+                <i className="fa-solid fa-stopwatch text-[10px]"></i>
+              </button>
+              <div 
+                className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}
+              ></div>
+            </div>
+          </div>
           {currentChoice && (
             <div className="flex flex-wrap gap-2 mt-1.5">
               {currentChoice.singer && (
@@ -223,7 +299,11 @@ const SongViewer: React.FC<SongViewerProps> = ({
                 </span>
               )}
               {currentChoice.key && (
-                <span className="text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                <span 
+                  onDoubleClick={handleQuickTranspose}
+                  title="Double-click to transpose to this key"
+                  className="text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 cursor-pointer select-none hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                >
                   Key: {currentChoice.key}
                 </span>
               )}
@@ -292,7 +372,12 @@ const SongViewer: React.FC<SongViewerProps> = ({
                       className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 dark:border-gray-700 hover:bg-blue-50 dark:hover:bg-gray-700 flex items-center space-x-3 ${idx === activeSetlistIndex ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-700 dark:text-gray-200'}`}
                     >
                       <span className="text-xs text-gray-400 dark:text-gray-500 w-4">{idx + 1}.</span>
-                      <span className="truncate">{sTitle}</span>
+                      <span className="truncate flex-1">{sTitle}</span>
+                      {choice.key && (
+                        <span className="text-[10px] font-bold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 shrink-0">
+                          {choice.key}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

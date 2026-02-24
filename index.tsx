@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { ThemeProvider } from './components/useTheme';
+import { ThemeProvider } from './hooks/useTheme';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
 const rootElement = document.getElementById('root');

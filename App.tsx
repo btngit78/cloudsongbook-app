@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { User, Song, UserRole, ViewState, UserSettings } from './types';
 import { SetList } from './types';
 import { MOCK_USER, MOCK_SONGS } from './constants';
@@ -10,7 +10,7 @@ import SongForm from './components/SongForm';
 import SettingsView from './components/SettingsView';
 import SetlistManager from './components/SetlistManager';
 import SongNavigator from './components/SongNavigator';
-import { useTheme } from './components/useTheme';
+import { useTheme } from './hooks/useTheme';
 import RecentSongsView from './components/RecentSongsView';
 import AdminDashboard from './components/AdminDashboard';
 import { useAuth } from './hooks/useAuth';
@@ -57,6 +57,7 @@ const App: React.FC = () => {
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const transposeHandledRef = useRef<string>('');
 
   // Sync theme
   const { setTheme } = useTheme();
@@ -135,6 +136,70 @@ const App: React.FC = () => {
     CHROMATIC_SCALE
   } = useTranspose(currentSong);
 
+  // Handle Setlist Transpose Mode
+  useEffect(() => {
+    if (!currentSong || !activeSetlist || activeSetlistIndex < 0 || !keyInfo) return;
+    
+    const mode = user?.settings?.setlistTransposeMode || 'off';
+    if (mode === 'off') return;
+
+    const choice = activeSetlist.choices[activeSetlistIndex];
+    if (!choice || !choice.key) return;
+
+    // Ensure we are looking at the correct song (prevents race condition with setlist index)
+    if (choice.songId !== currentSong.id) return;
+
+    const currentContextId = `${currentSong.id}-${activeSetlistIndex}`;
+
+    // If transpose is not 0, we are already transposed. Mark as handled.
+    if (transpose !== 0) {
+      transposeHandledRef.current = currentContextId;
+      return;
+    }
+
+    // If we've already handled this song instance (e.g. user reset to 0), don't prompt again.
+    if (transposeHandledRef.current === currentContextId) return;
+
+    // Mark as handled
+    transposeHandledRef.current = currentContextId;
+
+    // Normalize target key root
+    const match = choice.key.match(/^([A-G][#b]?)/);
+    if (!match) return;
+    
+    let root = match[1];
+    const flatMap: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+    if (flatMap[root]) root = flatMap[root];
+    
+    const targetIndex = CHROMATIC_SCALE.indexOf(root);
+    if (targetIndex === -1) return;
+    
+    const originalIndex = keyInfo.originalIndex;
+    
+    // If already in target key (original key matches target), do nothing
+    if (originalIndex === targetIndex) return;
+
+    let diff = targetIndex - originalIndex;
+    
+    // Normalize to shortest path
+    if (diff > 6) diff -= 12;
+    if (diff < -6) diff += 12;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    if (mode === 'auto') {
+      setTranspose(diff);
+    } else if (mode === 'confirm') {
+      // Timeout to ensure UI is stable before alert
+      timeoutId = setTimeout(() => {
+        if (window.confirm(`Song: ${currentSong.title}\n\nTranspose to ${choice.key} from ${keyInfo.currentKey}?`)) {
+          setTranspose(diff);
+        }
+      }, 100);
+    }
+    
+    return () => clearTimeout(timeoutId);
+  }, [currentSong?.id, activeSetlist, activeSetlistIndex, keyInfo?.originalIndex, transpose]);
+
   // Sync User Settings Theme with ThemeProvider
   useEffect(() => {
     if (user?.settings.theme) {
@@ -178,6 +243,7 @@ const App: React.FC = () => {
     };
     if (note === 'C#') return `Db${suffix}/C#${suffix}`;
     if (note === 'F#') return `Gb${suffix}/F#${suffix}`;
+    if (note === 'G#') return `Ab${suffix}/G#${suffix}`;
     if (flatMap[note]) {
       return `${flatMap[note]}${suffix}`;
     }
@@ -294,19 +360,24 @@ const App: React.FC = () => {
         isSearchActive={isHeaderSearchActive}
         onSearchActiveChange={setIsHeaderSearchActive}
         onKeyDown={handleSearchKeyDown}
+        menuOpen={menuOpen}
         rightContent={
           <div className={`hidden md:flex items-center space-x-2 transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
             {currentSong?.key && keyInfo && (
               <div 
-                className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600 select-none"
+                className={`flex items-center rounded-lg p-1 border select-none transition-all duration-300 ${
+                  transpose !== 0 
+                    ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]' 
+                    : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600'
+                }`}
                 onDoubleClick={() => setTranspose(0)}
-                title="Double-click to reset key"
+                title={transpose !== 0 ? "Key changed. Double-click to reset." : "Original Key"}
               >
-                <span className="text-xs font-bold text-gray-500 dark:text-gray-300 ml-2 mr-1">Key:</span>
+                <span className={`text-xs font-bold ml-2 mr-1 ${transpose !== 0 ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-300'}`}>Key:</span>
                 <div className="relative">
                   <select
                     aria-label="Transpose Key"
-                    className="appearance-none bg-transparent font-bold text-gray-900 dark:text-white text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none"
+                    className={`appearance-none bg-transparent font-bold text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none ${transpose !== 0 ? 'text-blue-900 dark:text-blue-100' : 'text-gray-900 dark:text-white'}`}
                     value={keyInfo.currentKey}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -325,16 +396,26 @@ const App: React.FC = () => {
                   </select>
                 </div>
                 
-                <div className="flex flex-col ml-1 border-l border-gray-300 dark:border-gray-600 pl-1">
+                <div className={`flex flex-col ml-1 border-l pl-1 ${transpose !== 0 ? 'border-blue-200 dark:border-blue-700' : 'border-gray-300 dark:border-gray-600'}`}>
                   <button aria-label="Up a semitone"
-                    onClick={() => setTranspose(t => t + 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                    onClick={() => setTranspose(t => t + 1)} className={`h-3 flex items-center justify-center rounded px-1 ${transpose !== 0 ? 'text-blue-600 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800' : 'text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
                     <i className="fa-solid fa-caret-up text-[10px]"></i>
                   </button>
                   <button aria-label="Down a semitone"
-                    onClick={() => setTranspose(t => t - 1)} className="h-3 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded px-1">
+                    onClick={() => setTranspose(t => t - 1)} className={`h-3 flex items-center justify-center rounded px-1 ${transpose !== 0 ? 'text-blue-600 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800' : 'text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
                     <i className="fa-solid fa-caret-down text-[10px]"></i>
                   </button>
                 </div>
+
+                {transpose !== 0 && (
+                  <button
+                    onClick={() => setTranspose(0)}
+                    className="ml-2 mr-1 w-5 h-5 flex items-center justify-center rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-200 hover:bg-blue-300 dark:hover:bg-blue-700 transition-colors animate-in fade-in zoom-in duration-200"
+                    title="Reset to Original Key"
+                  >
+                    <i className="fa-solid fa-rotate-left text-[10px]"></i>
+                  </button>
+                )}
               </div>
             )}
 
@@ -393,6 +474,7 @@ const App: React.FC = () => {
             searchQuery={searchQuery}
             selectedIndex={selectedIndex}
             onSongClick={(song) => handleSelectSong(song.id)}
+            highlightSearch={user?.settings.highlightSearch ?? false}
           />
         ) : (
           <>
@@ -403,6 +485,7 @@ const App: React.FC = () => {
               settings={user.settings} 
               onUpdateSettings={handleUpdateSettings}
               transpose={transpose}
+              onTranspose={setTranspose}
               activeSetlist={activeSetlist}
               activeSetlistIndex={activeSetlistIndex}
               onNextSong={() => navigateSetlist('next')}

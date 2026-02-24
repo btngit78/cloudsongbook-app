@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Song, SetList, SongChoice } from '../types';
 import { useFilteredSongs } from '../hooks/useSongSearch';
+import { useMetronome } from '../hooks/useMetronome';
 
 interface SetlistEditorProps {
   initialSetlist?: SetList;
@@ -21,6 +22,25 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  
+  // Metronome integration
+  const [metronomeIndex, setMetronomeIndex] = useState<number | null>(null);
+  const metronome = useMetronome(metronomeIndex !== null ? choices[metronomeIndex]?.tempo : undefined);
+
+  const handleUpdateChoice = useCallback((index: number, field: keyof SongChoice, value: string | number | undefined) => {
+    setChoices(currentChoices => {
+      const newChoices = [...currentChoices];
+      newChoices[index] = { ...newChoices[index], [field]: value } as SongChoice;
+      return newChoices;
+    });
+  }, []); // setChoices is stable
+
+  // Sync tapped tempo back to the choice
+  useEffect(() => {
+    if (metronomeIndex !== null && metronome.tempo !== undefined && choices[metronomeIndex] && metronome.tempo !== choices[metronomeIndex].tempo) {
+      handleUpdateChoice(metronomeIndex, 'tempo', metronome.tempo);
+    }
+  }, [metronome.tempo, metronomeIndex, choices, handleUpdateChoice]);
 
   // Debounce search input
   useEffect(() => {
@@ -111,10 +131,14 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
     }
   };
 
-  const handleUpdateChoice = (index: number, field: keyof SongChoice, value: string | number) => {
-    const newChoices = [...choices];
-    newChoices[index] = { ...newChoices[index], [field]: value };
-    setChoices(newChoices);
+  const toggleMetronomeForRow = (index: number) => {
+    if (metronomeIndex === index) {
+      metronome.toggle();
+    } else {
+      setMetronomeIndex(index);
+      // The hook will pick up the new tempo via the prop update in the next render
+      if (!metronome.active) metronome.toggle();
+    }
   };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -168,6 +192,17 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
   const getSong = (id: string) => allSongs.find(s => s.id === id);
 
+  const handleSave = () => {
+    const highTempoChoice = choices.find(c => c.tempo && c.tempo > 300);
+    if (highTempoChoice) {
+      const song = getSong(highTempoChoice.songId);
+      if (!window.confirm(`Warning: The song "${song?.title || 'Unknown'}" has a tempo of ${highTempoChoice.tempo} BPM, which is unusually high (> 300).\n\nDo you want to save anyway?`)) {
+        return;
+      }
+    }
+    onSave(name, choices);
+  };
+
   return (
     <div className="max-w-5xl mx-auto p-4 md:p-6 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mt-4 mb-12 transition-colors">
       <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
@@ -182,7 +217,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
             {isDirty ? 'Cancel' : 'Back'}
           </button>
           <button 
-            onClick={() => onSave(name, choices)} 
+            onClick={handleSave} 
             disabled={!name.trim() || !isDirty}
             className={`px-6 py-2 rounded-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all ${
               !name.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -279,13 +314,34 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-gray-400 uppercase">Tempo</label>
-                            <input 
-                              type="number" 
-                              value={choice.tempo || ''} 
-                              onChange={(e) => handleUpdateChoice(idx, 'tempo', parseInt(e.target.value) || 0)}
-                              className="w-full text-xs p-1.5 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 dark:text-white"
-                              placeholder={song?.tempo?.toString()}
-                            />
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="number" 
+                                min={0}
+                                value={choice.tempo ?? ''} 
+                                onChange={(e) => handleUpdateChoice(idx, 'tempo', e.target.value === '' ? undefined : parseInt(e.target.value))}
+                                className="w-full text-xs p-1.5 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 dark:text-white"
+                                placeholder={song?.tempo?.toString()}
+                              />
+                              <button
+                                onClick={() => toggleMetronomeForRow(idx)}
+                                className={`p-1.5 rounded transition-colors ${metronomeIndex === idx && metronome.active ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                                title="Metronome / Tap Tempo"
+                              >
+                                <i className="fa-solid fa-stopwatch"></i>
+                              </button>
+                            </div>
+                            {metronomeIndex === idx && metronome.active && (
+                              <div className="mt-1 flex items-center gap-2 animate-fadeIn">
+                                <button
+                                  onClick={metronome.tap}
+                                  className="flex-1 bg-blue-600 text-white text-[10px] font-bold py-1 rounded hover:bg-blue-700 active:scale-95 transition-all"
+                                >
+                                  TAP
+                                </button>
+                                <div className={`w-2 h-2 rounded-full transition-all duration-75 ${metronome.beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-125' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-gray-400 uppercase">Singer</label>

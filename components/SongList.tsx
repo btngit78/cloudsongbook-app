@@ -8,6 +8,7 @@ interface SongListProps {
   emptyMessage?: string;
   searchQuery?: string;
   selectedIndex?: number;
+  highlightSearch?: boolean;
 }
 
 export const SongList: React.FC<SongListProps> = ({
@@ -15,7 +16,8 @@ export const SongList: React.FC<SongListProps> = ({
   onSongClick,
   emptyMessage = "No songs found matching your search.",
   searchQuery = "",
-  selectedIndex = -1
+  selectedIndex = -1,
+  highlightSearch = false
 }) => {
   if (!songs || songs.length === 0) {
     return (
@@ -43,7 +45,7 @@ export const SongList: React.FC<SongListProps> = ({
   const highlightRegex = useSearchRegex(searchQuery);
 
   const highlightMatch = (text: string) => {
-    if (!highlightRegex || !text) {
+    if (!highlightSearch || !highlightRegex || !text) {
       return text;
     }
 

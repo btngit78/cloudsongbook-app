@@ -43,8 +43,10 @@ export const MOCK_USER: User = {
   settings: {
     fontSize: 18,
     showChords: true,
+    highlightSearch: false,
     theme: 'system',
     chordColor: '',
-    sectionColor: ''
+    sectionColor: '',
+    setlistTransposeMode: 'off'
   }
 };
