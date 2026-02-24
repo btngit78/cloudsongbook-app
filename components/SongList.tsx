@@ -1,16 +1,21 @@
 import React from 'react';
 import { Song } from '../types';
+import { useSearchRegex } from '../hooks/useSongSearch';
 
 interface SongListProps {
   songs: Song[];
   onSongClick: (song: Song) => void;
   emptyMessage?: string;
+  searchQuery?: string;
+  selectedIndex?: number;
 }
 
 export const SongList: React.FC<SongListProps> = ({
   songs,
   onSongClick,
-  emptyMessage = "No songs found matching your search."
+  emptyMessage = "No songs found matching your search.",
+  searchQuery = "",
+  selectedIndex = -1
 }) => {
   if (!songs || songs.length === 0) {
     return (
@@ -35,20 +40,64 @@ export const SongList: React.FC<SongListProps> = ({
     );
   }
 
+  const highlightRegex = useSearchRegex(searchQuery);
+
+  const highlightMatch = (text: string) => {
+    if (!highlightRegex || !text) {
+      return text;
+    }
+
+    const parts = text.split(highlightRegex);
+
+    return (
+      <>
+        {parts.map((part, index) =>
+          // With a capturing group in split, the matches appear at odd indices.
+          index % 2 === 1 ? (
+            <span key={index} className="bg-blue-200 text-blue-800 dark:bg-blue-700 dark:text-blue-100 font-medium rounded-sm">
+              {part}
+            </span>
+          ) : (
+            part
+          )
+        )}
+      </>
+    );
+  };
+
+  const listRef = React.useRef<HTMLUListElement>(null);
+
+  React.useEffect(() => {
+    if (selectedIndex >= 0 && listRef.current) {
+      const selectedElement = listRef.current.children[selectedIndex] as HTMLElement;
+      if (selectedElement) {
+        selectedElement.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedIndex]);
+
   return (
-    <ul className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
-      {songs.map((song) => (
+    <ul 
+      ref={listRef}
+      className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900"
+      onMouseDown={(e) => {
+        // Prevent click from bubbling to document, which would trigger the "click outside" handler in Header
+        // and close the search results before the click event can fire.
+        e.nativeEvent.stopImmediatePropagation();
+      }}
+    >
+      {songs.map((song, index) => (
         <li key={song.id}>
           <button
             onClick={() => onSongClick(song)}
-            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150 flex items-center justify-between group focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-800/50"
+            className={`w-full text-left px-4 py-3 transition-colors duration-150 flex items-center justify-between group focus:outline-none ${index === selectedIndex ? 'bg-blue-50 dark:bg-blue-900/30 ring-1 ring-inset ring-blue-500 z-10' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}
           >
             <div className="min-w-0 flex-1 pr-4">
               <h3 className="text-base font-semibold text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                {song.title}
+                {highlightMatch(song.title)}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                {song.authors}
+                {highlightMatch(song.authors)}
               </p>
             </div>
             

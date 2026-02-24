@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface HeaderProps {
   title?: string;
@@ -8,6 +8,7 @@ interface HeaderProps {
   isSearchActive?: boolean;
   onSearchActiveChange?: (isActive: boolean) => void;
   rightContent?: React.ReactNode;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,15 +18,38 @@ export const Header: React.FC<HeaderProps> = ({
   onMenuClick,
   isSearchActive: controlledSearchActive,
   onSearchActiveChange,
-  rightContent
+  rightContent,
+  onKeyDown
 }) => {
   const [localSearchActive, setLocalSearchActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const [inputValue, setInputValue] = useState(searchQuery);
 
   const isSearchActive = controlledSearchActive ?? localSearchActive;
-  const setIsSearchActive = (active: boolean) => {
+  const setIsSearchActive = useCallback((active: boolean) => {
     onSearchActiveChange ? onSearchActiveChange(active) : setLocalSearchActive(active);
-  };
+  }, [onSearchActiveChange]);
+
+  const handleCloseSearch = useCallback(() => {
+    setIsSearchActive(false);
+    setSearchQuery('');
+  }, [setIsSearchActive, setSearchQuery]);
+
+  // Sync local input with prop when it changes externally
+  useEffect(() => {
+    setInputValue(searchQuery);
+  }, [searchQuery]);
+
+  // Debounce search query updates
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inputValue !== searchQuery) {
+        setSearchQuery(inputValue);
+      }
+    }, 170);
+    return () => clearTimeout(timer);
+  }, [inputValue, setSearchQuery, searchQuery]);
 
   // Auto-focus input when search mode is activated
   useEffect(() => {
@@ -34,16 +58,28 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [isSearchActive]);
 
-  const handleCloseSearch = () => {
-    setIsSearchActive(false);
-    setSearchQuery('');
-  };
+  // Handle clicks outside the search bar to close it
+  useEffect(() => {
+    if (!isSearchActive) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        handleCloseSearch();
+      }
+    };
+    // Add listener on next tick to avoid capturing the click that opened the search
+    const timerId = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 0);
+    return () => {
+      clearTimeout(timerId);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSearchActive, handleCloseSearch]);
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm h-16 flex items-center px-4 transition-colors duration-200">
       {isSearchActive ? (
         // Search Mode View
-        <div className="flex-1 flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-200">
+        <div ref={searchContainerRef} className="flex-1 flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-200">
           <button
             onClick={handleCloseSearch}
             className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -60,14 +96,25 @@ export const Header: React.FC<HeaderProps> = ({
             <input
               ref={inputRef}
               type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  handleCloseSearch();
+                } else {
+                  onKeyDown?.(e);
+                }
+              }}
               placeholder="Search titles, authors..."
               className="w-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-full py-2 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            {searchQuery && (
+            {inputValue && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setInputValue('');
+                  setSearchQuery('');
+                }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 {/* X Icon */}
@@ -101,18 +148,18 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSearchActive(true)}
+              className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+              aria-label="Search"
+            >
+              {/* Search Icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.3-4.3"/>
+              </svg>
+            </button>
             {rightContent}
-          <button
-            onClick={() => setIsSearchActive(true)}
-            className="p-2 -mr-2 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-            aria-label="Search"
-          >
-            {/* Search Icon */}
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="m21 21-4.3-4.3"/>
-            </svg>
-          </button>
           </div>
         </div>
       )}

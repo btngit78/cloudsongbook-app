@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Song, UserSettings } from '../types';
 import { SetList } from '../types';
 
@@ -26,7 +26,23 @@ const SongViewer: React.FC<SongViewerProps> = ({
   activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
+  const hudRef = useRef<HTMLDivElement>(null);
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
+
+  useEffect(() => {
+    if (!hudOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (hudRef.current && !hudRef.current.contains(event.target as Node)) {
+        setHudOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [hudOpen]);
 
   // Determine if we should use flats for the target key based on user preference rules
   const useFlats = useMemo(() => {
@@ -222,11 +238,12 @@ const SongViewer: React.FC<SongViewerProps> = ({
 
         {/* Setlist HUD */}
         {activeSetlist && (
-          <div className="relative z-20">
+          <div ref={hudRef} className="relative z-20">
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden">
               <button
                 aria-label="Previous Song" 
                 onClick={onPrevSong}
+                title="Previous Song"
                 disabled={activeSetlistIndex <= 0}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
@@ -236,6 +253,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
               <button 
                 onClick={() => setHudOpen(!hudOpen)}
                 className="px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Click to jump to another song"
               >
                 <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px]">{activeSetlist.name}:</span>
                 <span className="text-gray-900 dark:text-gray-100 text-sm">{activeSetlistIndex + 1}/{activeSetlist.choices.length}</span>
@@ -244,6 +262,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
               <button
                 aria-label="Next Song" 
                 onClick={onNextSong}
+                title="Next Song"
                 disabled={activeSetlistIndex >= activeSetlist.choices.length - 1}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >

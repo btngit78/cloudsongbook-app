@@ -55,18 +55,58 @@ const App: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Sync theme
   const { setTheme } = useTheme();
 
+  const handleNavigation = (targetView: typeof view, callback?: () => void) => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+        return;
+      }
+      setHasUnsavedChanges(false);
+    }
+    if (callback) callback();
+    setView(targetView);
+    setMenuOpen(false);
+  };
+
   const handleSelectSong = useCallback(async (songId: string) => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+      setHasUnsavedChanges(false);
+    }
     const song = await selectSong(songId);
     if (song) {
       setView('SONG_VIEW');
       setSearchQuery('');
       setIsHeaderSearchActive(false);
     }
-  }, [selectSong]);
+  }, [selectSong, hasUnsavedChanges]);
+
+  // Reset selection when search query changes
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [searchQuery]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (searchQuery.length < 2) return;
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev < filteredSongs.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev > -1 ? prev - 1 : -1));
+    } else if (e.key === 'Enter') {
+      if (selectedIndex >= 0 && filteredSongs[selectedIndex]) {
+        e.preventDefault();
+        handleSelectSong(filteredSongs[selectedIndex].id);
+      }
+    }
+  };
 
   const {
     setlists,
@@ -253,6 +293,7 @@ const App: React.FC = () => {
         onMenuClick={() => setMenuOpen(true)}
         isSearchActive={isHeaderSearchActive}
         onSearchActiveChange={setIsHeaderSearchActive}
+        onKeyDown={handleSearchKeyDown}
         rightContent={
           <div className={`hidden md:flex items-center space-x-2 transition-all duration-300 ${view !== 'SONG_VIEW' ? 'blur-sm opacity-50 pointer-events-none' : ''}`}>
             {currentSong?.key && keyInfo && (
@@ -339,10 +380,18 @@ const App: React.FC = () => {
         ref={scrollContainerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto relative"
+        onMouseDown={(e) => {
+          // Prevent closing search when clicking on scrollbar or empty space in search results
+          if (isHeaderSearchActive && searchQuery.length >= 2) {
+            e.nativeEvent.stopImmediatePropagation();
+          }
+        }}
       >
-        {searchQuery ? (
+        {searchQuery.length >= 2 ? (
           <SongList 
             songs={filteredSongs} 
+            searchQuery={searchQuery}
+            selectedIndex={selectedIndex}
             onSongClick={(song) => handleSelectSong(song.id)}
           />
         ) : (
@@ -393,10 +442,12 @@ const App: React.FC = () => {
           <SetlistManager
             setlists={setlists}
             allSongs={allSongs}
+            currentSong={currentSong ?? undefined}
             onSave={saveSetlist}
             onDelete={deleteSetlist}
             onPlay={handlePlaySetlist}
             onClose={() => setView('SONG_VIEW')}
+            onDirtyChange={setHasUnsavedChanges}
           />
         )}
         {view === 'SETTINGS' && (
@@ -442,7 +493,7 @@ const App: React.FC = () => {
               {/* "Add New Song" for Admin and Premium */}
               {(user.role === UserRole.ADMIN || user.role === UserRole.PREMIUM) && (
                 <button 
-                  onClick={() => { setSongToEdit(undefined); setView('SONG_FORM'); setMenuOpen(false); }}
+                  onClick={() => handleNavigation('SONG_FORM', () => setSongToEdit(undefined))}
                   className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
                 >
                   <i className="fa-solid fa-plus w-6"></i>
@@ -453,7 +504,7 @@ const App: React.FC = () => {
               {/* "Edit Current Song" for Admin (always) or Premium (if owner) */}
               {(user.role === UserRole.ADMIN || (user.role === UserRole.PREMIUM && currentSong?.ownerId === user.id)) && (
                 <button 
-                  onClick={() => { if (currentSong) { setSongToEdit(currentSong); setView('SONG_FORM'); setMenuOpen(false); } }}
+                  onClick={() => { if (currentSong) handleNavigation('SONG_FORM', () => setSongToEdit(currentSong)); }}
                   disabled={!currentSong}
                   className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -479,7 +530,7 @@ const App: React.FC = () => {
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Playlists</p>
               {activeSetlist && (
                 <button 
-                  onClick={() => { exitSetlist(); setMenuOpen(false); }}
+                  onClick={() => { exitSetlist(); setMenuOpen(false); }} // Exit setlist doesn't change view, just state
                   className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors mb-2"
                 >
                   <i className="fa-solid fa-circle-stop w-6"></i>
@@ -487,14 +538,14 @@ const App: React.FC = () => {
                 </button>
               )}
               <button 
-                onClick={() => { setView('SETLIST_MANAGER'); setMenuOpen(false); }}
+                onClick={() => handleNavigation('SETLIST_MANAGER')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-list-ul w-6"></i>
                 <span className="font-medium">My Set-Lists</span>
               </button>
               <button 
-                onClick={() => { setView('RECENT_SONGS'); setMenuOpen(false); }}
+                onClick={() => handleNavigation('RECENT_SONGS')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-clock-rotate-left w-6"></i>
@@ -505,7 +556,7 @@ const App: React.FC = () => {
 
               {user.role === UserRole.ADMIN && (
                 <button 
-                  onClick={() => { setView('ADMIN_DASHBOARD'); setMenuOpen(false); }}
+                  onClick={() => handleNavigation('ADMIN_DASHBOARD')}
                   className="w-full flex items-center space-x-3 px-4 py-3 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-xl transition-colors mb-2"
                 >
                   <i className="fa-solid fa-users-gear w-6"></i>
@@ -522,14 +573,17 @@ const App: React.FC = () => {
                 <span className="font-medium">{user.settings.theme === 'dark' ? 'To Light Mode' : 'To Dark Mode'}</span>
               </button>
               <button 
-                onClick={() => { setView('SETTINGS'); setMenuOpen(false); }}
+                onClick={() => handleNavigation('SETTINGS')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-user-gear w-6"></i>
                 <span className="font-medium">Profile & Settings</span>
               </button>
               <button 
-                onClick={handleLogout}
+                onClick={() => {
+                  if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+                  handleLogout();
+                }}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-right-from-bracket w-6"></i>

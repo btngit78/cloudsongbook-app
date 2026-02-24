@@ -6,7 +6,9 @@ export const normalizeText = (text: string | undefined): string => {
   if (!text) return '';
   return text
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")              // Explicitly handle Vietnamese d
+    .replace(/Đ/g, "d")
+    .replace(/\p{M}/gu, "")         // Modern Regex: Removes ALL combining marks
     .toLowerCase()
     .trim();
 };

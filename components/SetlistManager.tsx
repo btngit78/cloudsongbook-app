@@ -5,10 +5,12 @@ import SetlistEditor from './SetlistEditor';
 interface SetlistManagerProps {
   setlists: SetList[];
   allSongs: Song[];
+  currentSong?: Song;
   onSave: (setlist: SetList) => void;
   onDelete: (id: string) => void;
   onPlay: (setlist: SetList) => void;
   onClose: () => void;
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 const getFriendlyDuration = (start: number, end: number) => {
@@ -29,7 +31,7 @@ const getFriendlyDuration = (start: number, end: number) => {
 };
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  setlists, allSongs, onSave, onDelete, onPlay, onClose 
+  setlists, allSongs, currentSong, onSave, onDelete, onPlay, onClose, onDirtyChange 
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -52,7 +54,9 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     };
 
     onSave(newSetlist);
-    setEditingId(null);
+    if (editingId === 'new') {
+      setEditingId(newSetlist.id);
+    }
   };
 
   const handleDuplicate = (setlistToCopy: SetList) => {
@@ -75,8 +79,10 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
       <SetlistEditor
         initialSetlist={setlistToEdit}
         allSongs={allSongs}
+        currentSong={currentSong}
         onSave={handleSave}
         onCancel={() => setEditingId(null)}
+        onDirtyChange={onDirtyChange}
       />
     );
   }

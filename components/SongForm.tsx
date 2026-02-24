@@ -11,18 +11,20 @@ interface SongFormProps {
 const LANGUAGES = ['English', 'Vietnamese', 'French', 'Spanish'];
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 
+const DEFAULT_FORM_DATA: Partial<Song> = {
+  title: '',
+  authors: '',
+  body: '',
+  key: '',
+  tempo: undefined,
+  keywords: [],
+  language: 'English',
+  isPdf: false,
+  pdfData: ''
+};
+
 const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
-  const [formData, setFormData] = useState<Partial<Song>>({
-    title: '',
-    authors: '',
-    body: '',
-    key: '',
-    tempo: undefined,
-    keywords: [],
-    language: 'English',
-    isPdf: false,
-    pdfData: ''
-  });
+  const [formData, setFormData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
 
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +104,18 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     handleSave();
   };
 
+  const handleCancel = () => {
+    const initialData = song || DEFAULT_FORM_DATA;
+    // Check if form data has changed from initial state
+    if (JSON.stringify(formData) !== JSON.stringify(initialData)) {
+      if (window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+        onCancel();
+      }
+    } else {
+      onCancel();
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mt-8 mb-12 transition-colors">
       <div className="flex items-center justify-between mb-8 border-b border-gray-200 dark:border-gray-700 pb-4">
@@ -111,7 +125,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
         <div className="flex space-x-3">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
             Cancel
@@ -288,7 +302,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
         <div className="flex justify-end space-x-4 pt-8 border-t border-gray-200 dark:border-gray-700">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-700 dark:text-gray-300 font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
             Cancel
