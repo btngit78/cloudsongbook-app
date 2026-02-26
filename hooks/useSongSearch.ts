@@ -12,6 +12,7 @@ const DIACRITICS_REGEX_MAP = (() => {
   const ranges = [
     { start: 0xC0, end: 0xFF },       // Latin-1 Supplement
     { start: 0x0100, end: 0x017F },   // Latin Extended-A
+    { start: 0x0180, end: 0x024F },   // Latin Extended-B (for ơ, ư, etc.)
     { start: 0x1E00, end: 0x1EFF }    // Latin Extended Additional
   ];
 
@@ -59,17 +60,63 @@ export const useSearchRegex = (query: string) => {
   }, [query]);
 };
 
-export const useFilteredSongs = (songs: Song[], query: string) => {
+export type SortOrder = 'relevance' | 'lastUsed' | 'dateAdded' | 'alphabetic';
+
+export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrder, sortDirection: 'asc' | 'desc') => {
   return useMemo(() => {
     if (!query.trim()) return songs;
+
     const pattern = getSearchPattern(query);
     const regex = new RegExp(pattern, 'i');
-    return songs.filter(s => regex.test(s.title) || regex.test(s.authors));
-  }, [songs, query]);
+    const filtered = songs.filter(s => regex.test(s.title) || regex.test(s.authors));
+    const dir = sortDirection === 'asc' ? 1 : -1;
+
+    // Now, sort the filtered results
+    switch (sortOrder) {
+      case 'lastUsed':
+        return [...filtered].sort((a, b) => ((a.lastUsedAt || 0) - (b.lastUsedAt || 0)) * dir);
+      case 'dateAdded':
+        return [...filtered].sort((a, b) => ((a.createdAt || 0) - (b.createdAt || 0)) * dir);
+      case 'alphabetic':
+        return [...filtered].sort((a, b) => a.title.localeCompare(b.title) * dir);
+      case 'relevance':
+      default:
+        const sorted = [...filtered].sort((a, b) => {
+          const aTitleMatch = regex.test(a.title);
+          const bTitleMatch = regex.test(b.title);
+          
+          if (aTitleMatch && !bTitleMatch) return -1;
+          if (!aTitleMatch && bTitleMatch) return 1;
+          return 0;
+        });
+        // 'asc' is default (title matches first). 'desc' is the reverse.
+        if (sortDirection === 'desc') {
+          return sorted.reverse();
+        }
+        return sorted;
+    }
+  }, [songs, query, sortOrder, sortDirection]);
 };
 
 export const useSongSearch = (songs: Song[]) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const filteredSongs = useFilteredSongs(songs, searchQuery);
-  return { searchQuery, setSearchQuery, filteredSongs };
+  const [sortOrder, setSortOrder] = useState<SortOrder>('dateAdded');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const handleSortChange = (newSortOrder: SortOrder) => {
+    if (newSortOrder === sortOrder) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortOrder(newSortOrder);
+      // Set default direction for the new sort type
+      if (newSortOrder === 'alphabetic' || newSortOrder === 'relevance') {
+        setSortDirection('asc');
+      } else { // dateAdded, lastUsed
+        setSortDirection('desc');
+      }
+    }
+  };
+
+  const filteredSongs = useFilteredSongs(songs, searchQuery, sortOrder, sortDirection);
+  return { searchQuery, setSearchQuery, filteredSongs, sortOrder, sortDirection, handleSortChange };
 };

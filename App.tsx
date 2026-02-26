@@ -49,7 +49,7 @@ const App: React.FC = () => {
     deleteSpecificSong
   } = useSongs();
 
-  const { searchQuery, setSearchQuery, filteredSongs } = useSongSearch(allSongs);
+  const { searchQuery, setSearchQuery, filteredSongs, sortOrder, sortDirection, handleSortChange } = useSongSearch(allSongs);
 
   const [view, setView] = useState<ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD'>('SONG_VIEW');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -487,13 +487,46 @@ const App: React.FC = () => {
         }}
       >
         {searchQuery.length >= 2 ? (
-          <SongList 
-            songs={filteredSongs} 
-            searchQuery={searchQuery}
-            selectedIndex={selectedIndex}
-            onSongClick={(song) => handleUserSongSelect(song.id)}
-            highlightSearch={user?.settings.highlightSearch ?? false}
-          />
+          <>
+            <div className="px-4 py-2 flex justify-end items-center gap-2 bg-gray-50 dark:bg-gray-900 sticky top-0 z-10 border-b border-gray-100 dark:border-gray-800">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Sort by:</span>
+              <button 
+                onClick={() => handleSortChange('dateAdded')}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors flex items-center gap-1.5 ${sortOrder === 'dateAdded' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700' : 'bg-white text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              >
+                Date Added
+                {sortOrder === 'dateAdded' && <i className={`fa-solid ${sortDirection === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short'}`}></i>}
+              </button>
+              <button 
+                onClick={() => handleSortChange('relevance')}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors flex items-center gap-1.5 ${sortOrder === 'relevance' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700' : 'bg-white text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              >
+                Relevance
+                {sortOrder === 'relevance' && <i className={`fa-solid ${sortDirection === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short'}`}></i>}
+              </button>
+              <button 
+                onClick={() => handleSortChange('lastUsed')}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors flex items-center gap-1.5 ${sortOrder === 'lastUsed' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700' : 'bg-white text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              >
+                Last Used
+                {sortOrder === 'lastUsed' && <i className={`fa-solid ${sortDirection === 'asc' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short'}`}></i>}
+              </button>
+              <button 
+                onClick={() => handleSortChange('alphabetic')}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors flex items-center gap-1.5 ${sortOrder === 'alphabetic' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700' : 'bg-white text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              >
+                Alphabetic
+                {sortOrder === 'alphabetic' && <i className={`fa-solid ${sortDirection === 'asc' ? 'fa-arrow-down-a-z' : 'fa-arrow-down-z-a'}`}></i>}
+              </button>
+            </div>
+            <SongList 
+              songs={filteredSongs} 
+              searchQuery={searchQuery}
+              selectedIndex={selectedIndex}
+              onSongClick={(song) => handleUserSongSelect(song.id)}
+              highlightSearch={user?.settings.highlightSearch ?? false}
+            />
+          </>
         ) : (
           <>
         {view === 'SONG_VIEW' && currentSong && (

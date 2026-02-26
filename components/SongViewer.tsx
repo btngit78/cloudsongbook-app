@@ -33,6 +33,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
   const [hudOpen, setHudOpen] = useState(false);
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
   const [currentYouTubeIndex, setCurrentYouTubeIndex] = useState(0);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [validVideoIds, setValidVideoIds] = useState<string[]>([]);
   const [showFixLinkModal, setShowFixLinkModal] = useState(false);
   const [fixLinkUrl, setFixLinkUrl] = useState('');
@@ -40,6 +41,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
   const [modalPosition, setModalPosition] = useState({ x: 20, y: 100 });
   const isDragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const onDrag = useCallback((e: MouseEvent | TouchEvent) => {
     if (!isDragging.current) return;
@@ -47,10 +49,19 @@ const SongViewer: React.FC<SongViewerProps> = ({
     const clientX = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
     const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
     
-    setModalPosition({
-      x: clientX - dragOffset.current.x,
-      y: clientY - dragOffset.current.y
-    });
+    let newX = clientX - dragOffset.current.x;
+    let newY = clientY - dragOffset.current.y;
+
+    if (modalRef.current) {
+      const rect = modalRef.current.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+
+      newX = Math.max(0, Math.min(newX, viewportWidth - rect.width));
+      newY = Math.max(0, Math.min(newY, viewportHeight - rect.height));
+    }
+
+    setModalPosition({ x: newX, y: newY });
   }, []);
 
   const stopDrag = useCallback(() => {
@@ -135,6 +146,24 @@ const SongViewer: React.FC<SongViewerProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [hudOpen]);
+
+  // Ensure modal stays in viewport on resize
+  useEffect(() => {
+    const handleResize = () => {
+      if ((isYouTubeModalOpen || showFixLinkModal) && modalRef.current) {
+        const rect = modalRef.current.getBoundingClientRect();
+        const viewportWidth = document.documentElement.clientWidth;
+        const viewportHeight = document.documentElement.clientHeight;
+        
+        setModalPosition(prev => ({
+          x: Math.max(0, Math.min(prev.x, viewportWidth - rect.width)),
+          y: Math.max(0, Math.min(prev.y, viewportHeight - rect.height))
+        }));
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isYouTubeModalOpen, showFixLinkModal]);
 
   // Determine if we should use flats for the target key based on user preference rules
   const useFlats = useMemo(() => {
@@ -340,7 +369,8 @@ const SongViewer: React.FC<SongViewerProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
+    <>
+      <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
       <header className="mb-4 pb-2 flex justify-between items-end">
         <div className="text-left">
           <div 
@@ -426,6 +456,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
                       setValidVideoIds(availableIds);
                       setCurrentYouTubeIndex(0);
                       setIsYouTubeModalOpen(true);
+                      setIsMinimized(false);
                   } else {
                       const confirmMessage = `Existing URL link is no longer valid and should be repaired.\n\nStart a search on YouTube?`;
                       if (window.confirm(confirmMessage)) {
@@ -564,10 +595,12 @@ const SongViewer: React.FC<SongViewerProps> = ({
           ))}
         </div>
       )}
+      </div>
 
       {/* YouTube Modal */}
       {isYouTubeModalOpen && validVideoIds.length > 0 && (
         <div 
+          ref={modalRef}
           className="fixed z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80 md:w-96 animate-fadeIn overflow-hidden"
           style={{ left: modalPosition.x, top: modalPosition.y }}
         >
@@ -580,16 +613,29 @@ const SongViewer: React.FC<SongViewerProps> = ({
               <i className="fa-brands fa-youtube text-red-600"></i>
               <span>({currentYouTubeIndex + 1}/{validVideoIds.length})</span>
             </h3>
-            <button
-              onClick={() => setIsYouTubeModalOpen(false)}
-              className="w-6 h-6 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              title="Close"
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            >
-              <i className="fa-solid fa-xmark text-xs"></i>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setIsMinimized(!isMinimized)}
+                className="w-6 h-6 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title={isMinimized ? "Expand" : "Minimize"}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <i className={`fa-solid ${isMinimized ? 'fa-expand' : 'fa-minus'} text-xs`}></i>
+              </button>
+              <button
+                onClick={() => setIsYouTubeModalOpen(false)}
+                className="w-6 h-6 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Close"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <i className="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
           </div>
+          {!isMinimized && (
+            <>
           <div className="aspect-video bg-black">
             <iframe
               src={`https://www.youtube.com/embed/${validVideoIds[currentYouTubeIndex]}?autoplay=1&rel=0`}
@@ -618,12 +664,15 @@ const SongViewer: React.FC<SongViewerProps> = ({
               </button>
             </div>
           )}
+            </>
+          )}
         </div>
       )}
 
       {/* Fix Link Modal */}
       {showFixLinkModal && (
         <div 
+          ref={modalRef}
           className="fixed z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80 md:w-96 animate-fadeIn overflow-hidden"
           style={{ left: modalPosition.x, top: modalPosition.y }}
         >
@@ -637,6 +686,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
               Fix Broken Link
             </h3>
             <button
+              title="Close"
               onClick={() => setShowFixLinkModal(false)}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
@@ -714,7 +764,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 
