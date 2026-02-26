@@ -47,6 +47,28 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
         </div>
 
         <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Show Comments</span>
+          <button 
+            aria-label="Toggle Show Comments"
+            onClick={() => setSettings({ ...settings, showComments: !(settings.showComments ?? false) })}
+            className={`w-12 h-6 rounded-full transition-colors relative ${settings.showComments ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+          >
+            <div className={`absolute top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.showComments ? 'left-7' : 'left-1'}`} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-remove Broken Links</span>
+          <button 
+            aria-label="Toggle Auto-remove Broken Links"
+            onClick={() => setSettings({ ...settings, autoRemoveBrokenLinks: !(settings.autoRemoveBrokenLinks ?? false) })}
+            className={`w-12 h-6 rounded-full transition-colors relative ${settings.autoRemoveBrokenLinks ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+          >
+            <div className={`absolute top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.autoRemoveBrokenLinks ? 'left-7' : 'left-1'}`} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Highlight Search Terms</span>
           <button 
             aria-label="Toggle Highlight Search"

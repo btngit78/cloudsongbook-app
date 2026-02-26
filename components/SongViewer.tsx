@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Song, UserSettings } from '../types';
 import { SetList } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
@@ -17,22 +17,105 @@ interface SongViewerProps {
   onSetlistJump?: (index: number) => void;
   onExitSetlist?: () => void;
   allSongs?: Song[];
+  onUpdateSong?: (song: Partial<Song>) => void;
 }
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
 const SHARP_TO_FLAT: Record<string, string> = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
+const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/g;
 
 const SongViewer: React.FC<SongViewerProps> = ({ 
   song, settings, onUpdateSettings, transpose, onTranspose,
-  activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs
+  activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs,
+  onUpdateSong
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
+  const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
+  const [currentYouTubeIndex, setCurrentYouTubeIndex] = useState(0);
+  const [validVideoIds, setValidVideoIds] = useState<string[]>([]);
+  const [showFixLinkModal, setShowFixLinkModal] = useState(false);
+  const [fixLinkUrl, setFixLinkUrl] = useState('');
+  const [brokenLinkIds, setBrokenLinkIds] = useState<string[]>([]);
+  const [modalPosition, setModalPosition] = useState({ x: 20, y: 100 });
+  const isDragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  const onDrag = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isDragging.current) return;
+    
+    const clientX = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
+    const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
+    
+    setModalPosition({
+      x: clientX - dragOffset.current.x,
+      y: clientY - dragOffset.current.y
+    });
+  }, []);
+
+  const stopDrag = useCallback(() => {
+    isDragging.current = false;
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchmove', onDrag);
+    document.removeEventListener('touchend', stopDrag);
+  }, [onDrag]);
+
+  const startDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    isDragging.current = true;
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    dragOffset.current = {
+      x: clientX - modalPosition.x,
+      y: clientY - modalPosition.y
+    };
+    
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('touchend', stopDrag);
+  };
+
   const hudRef = useRef<HTMLDivElement>(null);
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
   const displayTempo = currentChoice?.tempo || song.tempo;
   
   const { tempo: effectiveTempo, setTempo: setLocalTempo, active: metronomeActive, toggle: toggleMetronome, beatFlash, tap: handleTap, reset: resetMetronome } = useMetronome(displayTempo);
+
+  useEffect(() => {
+    // Close YouTube modal when song changes
+    setIsYouTubeModalOpen(false);
+  }, [song.id]);
+
+  const youTubeVideoIds = useMemo(() => {
+    const ids = new Set<string>();
+    const matches = song.body.matchAll(YOUTUBE_REGEX);
+    for (const match of matches) {
+      if (match[1]) ids.add(match[1]);
+    }
+    return Array.from(ids);
+  }, [song.body]);
+
+  const checkVideoAvailability = (id: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        // Valid mqdefault is 320x180. The "unavailable" placeholder is 120x90.
+        resolve(img.width > 120);
+      };
+      img.onerror = () => {
+        resolve(false);
+      };
+      img.src = `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
+    });
+  };
+
+  const extractYouTubeId = (url: string) => {
+    const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return match ? match[1] : null;
+  };
 
   useEffect(() => {
     resetMetronome();
@@ -191,6 +274,12 @@ const SongViewer: React.FC<SongViewerProps> = ({
       return (
         <div key={bIdx} id={sectionId} className={`${mbClass} last:mb-6`}>
           {lines.map((line, lIdx) => {
+            const isComment = line.trim().startsWith('#');
+            if (isComment) {
+              if (!settings.showComments) return null;
+              return <div key={lIdx} className="whitespace-pre font-mono text-gray-400 dark:text-gray-500 italic text-sm my-1">{line}</div>;
+            }
+
             const trimmed = line.trim().toLowerCase();
             if (trimmed === '{eoc}') {
               inChorusSection = false;
@@ -289,6 +378,66 @@ const SongViewer: React.FC<SongViewerProps> = ({
               <div 
                 className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}
               ></div>
+              <button
+                onClick={async () => {
+                  const allIdsInBody = youTubeVideoIds;
+              
+                  if (allIdsInBody.length === 0) {
+                      if (window.confirm(`No YouTube video link found.\n\nSearch YouTube for "${song.title}"?`)) {
+                          window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(song.title + ' ' + song.authors)}`, '_blank');
+                      }
+                      return;
+                  }
+              
+                  const checks = await Promise.all(allIdsInBody.map(async (id) => ({ id, valid: await checkVideoAvailability(id) })));
+                  const availableIds = checks.filter(c => c.valid).map(c => c.id);
+                  const invalidIds = checks.filter(c => !c.valid).map(c => c.id);
+              
+                  if (invalidIds.length > 0 && onUpdateSong) {
+                      let shouldRemove = false;
+                      
+                      if (settings.autoRemoveBrokenLinks) {
+                          shouldRemove = true;
+                      } else {
+                          setBrokenLinkIds(invalidIds);
+                          setValidVideoIds(availableIds);
+                          setShowFixLinkModal(true);
+                          return;
+                      }
+
+                      if (shouldRemove) {
+                          const newBody = song.body.split('\n').filter(line => {
+                              if (!line.trim().startsWith('#')) return true;
+                              const containsInvalidLink = invalidIds.some(id => line.includes(id));
+                              return !containsInvalidLink;
+                          }).join('\n');
+                          
+                          onUpdateSong({ ...song, body: newBody });
+                          
+                          // If manual confirmation, return to refresh. If auto, fall through to show valid videos if any.
+                          if (!settings.autoRemoveBrokenLinks) return;
+                      }
+                  }
+              
+                  if (availableIds.length > 0) {
+                      const width = window.innerWidth;
+                      const modalWidth = width >= 768 ? 384 : 320;
+                      setModalPosition({ x: Math.max(20, width - modalWidth - 30), y: 100 });
+                      setValidVideoIds(availableIds);
+                      setCurrentYouTubeIndex(0);
+                      setIsYouTubeModalOpen(true);
+                  } else {
+                      const confirmMessage = `Existing URL link is no longer valid and should be repaired.\n\nStart a search on YouTube?`;
+                      if (window.confirm(confirmMessage)) {
+                          window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(song.title + ' ' + song.authors)}`, '_blank');
+                      }
+                  }
+                }}
+                className={`ml-2 w-7 h-7 flex items-center justify-center rounded-full transition-colors ${youTubeVideoIds.length > 0 ? 'text-red-600 bg-red-100 dark:bg-red-900/50 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900' : 'text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                title={youTubeVideoIds.length > 0 ? "Watch YouTube video" : "Search on YouTube"}
+              >
+                <i className="fa-brands fa-youtube text-sm"></i>
+              </button>
             </div>
           </div>
           {currentChoice && (
@@ -413,6 +562,156 @@ const SongViewer: React.FC<SongViewerProps> = ({
               #{kw}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* YouTube Modal */}
+      {isYouTubeModalOpen && validVideoIds.length > 0 && (
+        <div 
+          className="fixed z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80 md:w-96 animate-fadeIn overflow-hidden"
+          style={{ left: modalPosition.x, top: modalPosition.y }}
+        >
+          <div 
+            className="p-2 flex justify-between items-center border-b border-gray-200 dark:border-gray-700 cursor-move bg-gray-50 dark:bg-gray-700/50 rounded-t-xl"
+            onMouseDown={startDrag}
+            onTouchStart={startDrag}
+          >
+            <h3 className="text-xs font-bold text-gray-800 dark:text-gray-200 ml-2 select-none flex items-center gap-2">
+              <i className="fa-brands fa-youtube text-red-600"></i>
+              <span>({currentYouTubeIndex + 1}/{validVideoIds.length})</span>
+            </h3>
+            <button
+              onClick={() => setIsYouTubeModalOpen(false)}
+              className="w-6 h-6 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              title="Close"
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <i className="fa-solid fa-xmark text-xs"></i>
+            </button>
+          </div>
+          <div className="aspect-video bg-black">
+            <iframe
+              src={`https://www.youtube.com/embed/${validVideoIds[currentYouTubeIndex]}?autoplay=1&rel=0`}
+              title="YouTube video player"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="w-full h-full"
+            ></iframe>
+          </div>
+          {validVideoIds.length > 1 && (
+            <div className="absolute top-1/2 -translate-y-1/2 w-full flex justify-between px-1 pointer-events-none">
+              <button
+                onClick={() => setCurrentYouTubeIndex(prev => (prev - 1 + validVideoIds.length) % validVideoIds.length)}
+                className="bg-black/30 text-white w-8 h-8 rounded-full hover:bg-black/50 transition-colors pointer-events-auto flex items-center justify-center"
+                title="Previous Video"
+              >
+                <i className="fa-solid fa-chevron-left text-xs"></i>
+              </button>
+              <button
+                onClick={() => setCurrentYouTubeIndex(prev => (prev + 1) % validVideoIds.length)}
+                className="bg-black/30 text-white w-8 h-8 rounded-full hover:bg-black/50 transition-colors pointer-events-auto flex items-center justify-center"
+                title="Next Video"
+              >
+                <i className="fa-solid fa-chevron-right text-xs"></i>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Fix Link Modal */}
+      {showFixLinkModal && (
+        <div 
+          className="fixed z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80 md:w-96 animate-fadeIn overflow-hidden"
+          style={{ left: modalPosition.x, top: modalPosition.y }}
+        >
+          <div 
+            className="p-3 border-b border-gray-200 dark:border-gray-700 cursor-move bg-gray-50 dark:bg-gray-700/50 rounded-t-xl flex justify-between items-center"
+            onMouseDown={startDrag}
+            onTouchStart={startDrag}
+          >
+            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 select-none">
+              <i className="fa-solid fa-wrench text-amber-500"></i>
+              Fix Broken Link
+            </h3>
+            <button
+              onClick={() => setShowFixLinkModal(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          
+          <div className="p-4 space-y-4">
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              <p className="mb-2">A YouTube link in this song is unavailable.</p>
+              <button 
+                onClick={() => window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(song.title + ' ' + song.authors)}`, '_blank')}
+                className="text-blue-600 dark:text-blue-400 hover:underline text-xs font-bold flex items-center gap-1"
+              >
+                <i className="fa-brands fa-youtube"></i> Search for replacement
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={fixLinkUrl}
+              onChange={(e) => setFixLinkUrl(e.target.value)}
+              placeholder="Paste new YouTube URL here..."
+              className="w-full text-sm p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              autoFocus
+            />
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  const newBody = song.body.split('\n').filter(line => {
+                    if (!line.trim().startsWith('#')) return true;
+                    return !brokenLinkIds.some(id => line.includes(id));
+                  }).join('\n');
+                  onUpdateSong?.({ ...song, body: newBody });
+                  setShowFixLinkModal(false);
+                }}
+                className="px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+              >
+                Remove Link
+              </button>
+              <button
+                onClick={() => {
+                  const newId = extractYouTubeId(fixLinkUrl);
+                  if (newId && brokenLinkIds.length > 0) {
+                    const oldId = brokenLinkIds[0];
+                    const newBody = song.body.replace(oldId, newId);
+                    onUpdateSong?.({ ...song, body: newBody });
+                    setShowFixLinkModal(false);
+                    setFixLinkUrl('');
+                  } else {
+                    alert("Invalid YouTube URL");
+                  }
+                }}
+                disabled={!fixLinkUrl}
+                className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Replace
+              </button>
+            </div>
+            
+            {validVideoIds.length > 0 && (
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-700 text-center">
+                <button
+                  onClick={() => {
+                    setShowFixLinkModal(false);
+                    setIsYouTubeModalOpen(true);
+                  }}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  Ignore and watch valid videos ({validVideoIds.length})
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

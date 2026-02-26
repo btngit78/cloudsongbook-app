@@ -76,7 +76,7 @@ const App: React.FC = () => {
 
   const handleSelectSong = useCallback(async (songId: string) => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return null;
       setHasUnsavedChanges(false);
     }
     const song = await selectSong(songId);
@@ -84,13 +84,42 @@ const App: React.FC = () => {
       setView('SONG_VIEW');
       setSearchQuery('');
       setIsHeaderSearchActive(false);
+      return song;
     }
+    return null;
   }, [selectSong, hasUnsavedChanges]);
 
   // Reset selection when search query changes
   useEffect(() => {
     setSelectedIndex(-1);
   }, [searchQuery]);
+
+  const {
+    setlists,
+    activeSetlist,
+    activeSetlistIndex,
+    saveSetlist,
+    deleteSetlist,
+    playSetlist,
+    navigateSetlist,
+    exitSetlist
+  } = useSetlists(user, handleSelectSong);
+
+  const handleUserSongSelect = async (songId: string) => {
+    if (activeSetlist) {
+      const index = activeSetlist.choices.findIndex(c => c.songId === songId);
+      if (index !== -1) {
+        navigateSetlist(index);
+      } else {
+        const result = await handleSelectSong(songId);
+        if (result) {
+          exitSetlist();
+        }
+      }
+    } else {
+      handleSelectSong(songId);
+    }
+  };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (searchQuery.length < 2) return;
@@ -104,21 +133,10 @@ const App: React.FC = () => {
     } else if (e.key === 'Enter') {
       if (selectedIndex >= 0 && filteredSongs[selectedIndex]) {
         e.preventDefault();
-        handleSelectSong(filteredSongs[selectedIndex].id);
+        handleUserSongSelect(filteredSongs[selectedIndex].id);
       }
     }
   };
-
-  const {
-    setlists,
-    activeSetlist,
-    activeSetlistIndex,
-    saveSetlist,
-    deleteSetlist,
-    playSetlist,
-    navigateSetlist,
-    exitSetlist
-  } = useSetlists(user, handleSelectSong);
 
   const {
     scrollContainerRef,
@@ -473,7 +491,7 @@ const App: React.FC = () => {
             songs={filteredSongs} 
             searchQuery={searchQuery}
             selectedIndex={selectedIndex}
-            onSongClick={(song) => handleSelectSong(song.id)}
+            onSongClick={(song) => handleUserSongSelect(song.id)}
             highlightSearch={user?.settings.highlightSearch ?? false}
           />
         ) : (
@@ -493,6 +511,7 @@ const App: React.FC = () => {
               onSetlistJump={(idx) => navigateSetlist(idx)}
               onExitSetlist={exitSetlist}
               allSongs={allSongs}
+              onUpdateSong={handleSaveSong}
             />
             <SongNavigator 
               showBackToTop={showBackToTop}
@@ -512,7 +531,7 @@ const App: React.FC = () => {
         {view === 'RECENT_SONGS' && (
           <RecentSongsView 
             songs={allSongs.slice(0, 50)}
-            onSelectSong={handleSelectSong}
+            onSelectSong={handleUserSongSelect}
             onEditSong={(song) => {
               setSongToEdit(song);
               setView('SONG_FORM');

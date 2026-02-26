@@ -22,6 +22,8 @@ export interface UserSettings {
   chordColor: string; // For dark theme
   sectionColor: string; // For dark theme
   setlistTransposeMode?: 'auto' | 'confirm' | 'off';
+  showComments?: boolean;
+  autoRemoveBrokenLinks?: boolean;
 }
 
 export interface Song {
