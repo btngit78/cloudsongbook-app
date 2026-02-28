@@ -305,6 +305,30 @@ const SongViewer: React.FC<SongViewerProps> = ({
           {lines.map((line, lIdx) => {
             const isComment = line.trim().startsWith('#');
             if (isComment) {
+              // Check for URLs in comments to render them as clickable links
+              const urlRegex = /(https?:\/\/[^\s]+)/g;
+              if (urlRegex.test(line)) {
+                const parts = line.split(urlRegex);
+                return (
+                  <div key={lIdx} className="my-1.5 flex flex-wrap items-center gap-x-1 text-sm">
+                    <i className="fa-solid fa-arrow-up-right-from-square text-xs text-blue-500 dark:text-blue-400 mr-1 opacity-70"></i>
+                    {parts.map((part, pIdx) => {
+                      if (part.match(/^https?:\/\//)) {
+                        return (
+                          <a key={pIdx} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all font-medium" onClick={(e) => e.stopPropagation()}>
+                            {part}
+                          </a>
+                        );
+                      }
+                      // Remove leading # from the first text part
+                      let text = part;
+                      if (pIdx === 0) text = text.replace(/^#\s*/, '');
+                      if (!text.trim()) return null;
+                      return <span key={pIdx} className="text-gray-500 dark:text-gray-400 italic">{text}</span>;
+                    })}
+                  </div>
+                );
+              }
               if (!settings.showComments) return null;
               return <div key={lIdx} className="whitespace-pre font-mono text-gray-400 dark:text-gray-500 italic text-sm my-1">{line}</div>;
             }
