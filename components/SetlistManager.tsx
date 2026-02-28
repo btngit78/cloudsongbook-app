@@ -79,20 +79,21 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   };
 
   const handleSave = (name: string, choices: SongChoice[]) => {
+    const isNew = editingId === 'new';
+    const originalSetlist = isNew ? undefined : setlists.find(s => s.id === editingId);
+
     const newSetlist: SetList = {
-      id: editingId === 'new' ? Date.now().toString() : editingId!,
+      id: isNew ? Date.now().toString() : editingId!,
       name,
       choices,
-      createdAt: editingId === 'new' ? Date.now() : (setlists.find(s => s.id === editingId)?.createdAt || Date.now()),
+      createdAt: originalSetlist?.createdAt || Date.now(),
       updatedAt: Date.now(),
-      ownerId: '',
-      lastUsedAt: editingId === 'new' ? 0 : (setlists.find(s => s.id === editingId)?.lastUsedAt || 0)
+      ownerId: originalSetlist?.ownerId || user?.id || '',
+      lastUsedAt: originalSetlist?.lastUsedAt || 0
     };
 
     onSave(newSetlist);
-    if (editingId === 'new') {
-      setEditingId(newSetlist.id);
-    }
+    setEditingId(null);
   };
 
   const handleDuplicate = (setlistToCopy: SetList) => {
@@ -131,6 +132,16 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     });
   };
 
+  const isPremium = user?.role === UserRole.PREMIUM;
+  const filteredSetlists = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return setlists;
+    }
+    const pattern = getSearchPattern(searchQuery);
+    const regex = new RegExp(pattern, 'i');
+    return setlists.filter(s => regex.test(s.name));
+  }, [setlists, searchQuery]);
+
   if (editingId) {
     const setlistToEdit = setlists.find(s => s.id === editingId);
     return (
@@ -145,15 +156,6 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     );
   }
 
-  const isPremium = user?.role === UserRole.PREMIUM;
-  const filteredSetlists = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return setlists;
-    }
-    const pattern = getSearchPattern(searchQuery);
-    const regex = new RegExp(pattern, 'i');
-    return setlists.filter(s => regex.test(s.name));
-  }, [setlists, searchQuery]);
   const sortedSetlists = processList(filteredSetlists);
   
   let primaryList: SetList[];

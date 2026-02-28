@@ -137,11 +137,10 @@ export const dbService = {
     }
   },
 
-  async saveSetlist(setlist: SetList, userId: string): Promise<void> {
+  async saveSetlist(setlist: SetList): Promise<void> {
     const now = Date.now();
     const data = { 
       ...setlist, 
-      ownerId: userId,
       updatedAt: now,
       createdAt: (setlist as any).createdAt || now,
       name: setlist.name || 'Untitled Setlist',

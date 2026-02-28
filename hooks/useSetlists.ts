@@ -28,7 +28,7 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => v
       newSetlists = [...setlists, setlist];
     }
     setSetlists(newSetlists);
-    if (user) dbService.saveSetlist(setlist, user.id);
+    if (user) dbService.saveSetlist(setlist);
   };
 
   const deleteSetlist = (id: string) => {
