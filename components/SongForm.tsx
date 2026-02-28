@@ -2,6 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
+import { storageService } from '../services/storageService';
+import { db } from '../firebaseConfig';
+import { doc, collection } from 'firebase/firestore';
+import { ProgressBar } from './ProgressBar';
 
 interface SongFormProps {
   song?: Song;
@@ -10,7 +14,7 @@ interface SongFormProps {
 }
 
 const LANGUAGES = ['English', 'Vietnamese', 'French', 'Spanish'];
-const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const DEFAULT_FORM_DATA: Partial<Song> = {
   title: '',
@@ -21,12 +25,15 @@ const DEFAULT_FORM_DATA: Partial<Song> = {
   keywords: [],
   language: 'English',
   isPdf: false,
-  pdfData: ''
+  pdfUrl: ''
 };
 
 const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   const [formData, setFormData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
-
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +48,16 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   useEffect(() => {
     if (song) {
       setFormData(song);
+      if (song.pdfUrl) {
+        // Try to derive a name from the URL if we don't have it
+        try {
+            const url = new URL(song.pdfUrl);
+            const pathParts = url.pathname.split('/');
+            setFileName(decodeURIComponent(pathParts[pathParts.length - 1]));
+        } catch {
+            setFileName("PDF file");
+        }
+      }
     }
   }, [song]);
 
@@ -51,24 +68,50 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     }
   }, [metronomeTempo]);
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     if (file.type !== 'application/pdf') {
       setError('Only PDF files are allowed.');
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
-      setError('File size must be under 4MB.');
+      setError('File size must be under 10MB.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        setFormData({ ...formData, pdfData: e.target.result as string });
-        setError(null);
-      }
-    };
-    reader.readAsDataURL(file);
+    setError(null);
+    setUploading(true);
+    setUploadProgress(0);
+    setFileName(file.name);
+
+    // We need a song ID to create the storage path.
+    // If we have one, use it. If not, generate a new one for the upload.
+    const songId = formData.id || doc(collection(db, 'songs')).id;
+
+    try {
+      const downloadUrl = await storageService.uploadSongPdf(file, songId, (progress) => {
+        setUploadProgress(progress);
+      });
+      
+      // On success, update the form with the new ID and URL
+      setFormData(prev => ({
+        ...prev,
+        id: songId, // Ensure the form data has the ID
+        isPdf: true,
+        pdfUrl: downloadUrl,
+        body: '', // Clear body if switching to PDF
+      }));
+
+    } catch (err) {
+      console.error("PDF Upload failed:", err);
+      setError('Failed to upload PDF. Please try again.');
+      setFileName(null); // Clear file name on error
+      setFormData(prev => ({
+        ...prev,
+        pdfUrl: undefined
+      }));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -108,7 +151,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
       setError('Tempo must be a positive number (or 0) less than or equal to 400.');
       return;
     }
-    if (formData.isPdf && !formData.pdfData) {
+    if (formData.isPdf && !formData.pdfUrl) {
       setError('Please upload a PDF file.');
       return;
     }
@@ -295,9 +338,9 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               onDragLeave={handleDrag}
               onDragOver={handleDrag}
               onDrop={handleDrop}
-              className={`relative border-2 border-dashed rounded-3xl p-12 text-center transition-all ${
+              className={`relative border-2 border-dashed rounded-3xl p-8 md:p-12 text-center transition-all ${
                 dragActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50'
-              } ${formData.pdfData ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700' : ''}`}
+              } ${formData.pdfUrl && !uploading ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700' : ''}`}
             >
               <input 
                 type="file" 
@@ -307,11 +350,19 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
                 onChange={(e) => e.target.files && handleFile(e.target.files[0])}
               />
               <label htmlFor="pdf-upload" className="cursor-pointer">
-                {formData.pdfData ? (
+                {uploading ? (
+                  <div className="space-y-2">
+                    <i className="fa-solid fa-cloud-arrow-up text-5xl text-blue-500 dark:text-blue-400 animate-bounce"></i>
+                    <p className="text-blue-700 dark:text-blue-300 font-bold">Uploading PDF...</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 truncate max-w-full">{fileName}</p>
+                    <div className="max-w-xs mx-auto pt-2"><ProgressBar progress={uploadProgress} /></div>
+                  </div>
+                ) : formData.pdfUrl ? (
                   <div className="space-y-2">
                     <i className="fa-solid fa-file-circle-check text-5xl text-green-500 dark:text-green-400"></i>
-                    <p className="text-green-700 dark:text-green-300 font-bold">PDF Ready (Under 4MB)</p>
-                    <p className="text-xs text-green-600 dark:text-green-400">Click or drag to replace</p>
+                    <p className="text-green-700 dark:text-green-300 font-bold">PDF Uploaded</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 truncate max-w-full">{fileName}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Click or drag to replace</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -319,6 +370,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
                     <div>
                       <p className="text-lg font-bold text-gray-700 dark:text-gray-200">Drop PDF here</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">or click to browse</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Max file size: 10MB</p>
                     </div>
                   </div>
                 )}

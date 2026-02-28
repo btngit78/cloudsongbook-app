@@ -53,6 +53,7 @@ export const dbService = {
       authors: song.authors|| 'Unknown',
       body: song.body || '',
       key: song.key || 'C',
+      pdfUrl: song.pdfUrl || '',
       tempo: song.tempo || 0,
       keywords: song.keywords || [],
       language: song.language || 'English',

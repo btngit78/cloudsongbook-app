@@ -571,10 +571,10 @@ const SongViewer: React.FC<SongViewerProps> = ({
         className={`bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
         style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
       >
-        {song.isPdf && song.pdfData ? (
+        {song.isPdf && song.pdfUrl ? (
           <div className="w-full h-[80vh]">
             <iframe 
-              src={`${song.pdfData}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+              src={`${song.pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
               className="w-full h-full rounded-3xl"
               title={song.title}
             ></iframe>

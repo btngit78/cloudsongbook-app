@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions to check user roles
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    // Specific rules for user folders
+    match /users/{userId}/{allPaths=**} {
+      // Premium users can write to their own specific folder
+      allow write: if hasRole('PREMIUM') && request.auth.uid == userId;
+    }
+
+    match /{allPaths=**} {
+      // Free users (and all authenticated users) can read content
+      allow read: if isSignedIn();
+
+      // Admin users can perform full CRUD operations globally
+      allow write: if hasRole('ADMIN');
+    }
+  }
+}

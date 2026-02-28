@@ -37,7 +37,7 @@ export interface Song {
   ownerId: string;
   language: string;
   isPdf: boolean;
-  pdfData?: string; // Base64 encoded PDF string
+  pdfUrl?: string; // Public URL to the PDF file in Cloud Storage
   createdAt: number;
   updatedAt: number;
   lastUsedAt: number;
