@@ -50,6 +50,7 @@ export interface SetList {
   choices: SongChoice[]; 
   createdAt: number; 
   updatedAt: number; 
+  lastUsedAt?: number;
 } 
   
 export interface SongChoice { 

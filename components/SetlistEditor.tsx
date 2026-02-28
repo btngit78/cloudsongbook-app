@@ -85,7 +85,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   }, [isDirty, onDirtyChange]);
 
   // Filter available songs using smart regex
-  const availableSongs = useFilteredSongs(allSongs, searchQuery);
+  const availableSongs = useFilteredSongs(allSongs, searchQuery, 'relevance', 'asc');
 
   const handleAddSong = (song: Song) => {
     const newChoice: SongChoice = {

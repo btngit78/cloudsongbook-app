@@ -10,7 +10,7 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => v
   // Load setlists when user changes
   useEffect(() => {
     if (user) {
-      dbService.getSetlists(user.id).then(setSetlists);
+      dbService.getSetlists().then(setSetlists);
     } else {
       setSetlists([]);
       setActiveSetlist(null);
@@ -47,6 +47,10 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => v
     if (setlist.choices && setlist.choices.length > 0) {
       selectSong(setlist.choices[0].songId);
     }
+    // Update lastUsedAt
+    const updated = { ...setlist, lastUsedAt: Date.now() };
+    // We update local state immediately for UI responsiveness, then save to DB
+    saveSetlist(updated);
   };
 
   const navigateSetlist = (direction: 'next' | 'prev' | number) => {

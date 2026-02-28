@@ -120,9 +120,10 @@ export const dbService = {
   },
 
   // --- Setlists ---
-  async getSetlists(userId: string): Promise<SetList[]> {
+  async getSetlists(): Promise<SetList[]> {
     try {
-      const q = query(collection(db, SETLISTS_COLLECTION), where('ownerId', '==', userId));
+      // Fetch all setlists (readable by all users)
+      const q = query(collection(db, SETLISTS_COLLECTION));
       const snapshot = await getDocs(q);
       return snapshot.docs.map(doc => {
         const data = doc.data();
@@ -144,7 +145,8 @@ export const dbService = {
       updatedAt: now,
       createdAt: (setlist as any).createdAt || now,
       name: setlist.name || 'Untitled Setlist',
-      choices: setlist.choices || []
+      choices: setlist.choices || [],
+      lastUsedAt: setlist.lastUsedAt || 0
     };
     await setDoc(doc(db, SETLISTS_COLLECTION, setlist.id), data, { merge: true });
   },

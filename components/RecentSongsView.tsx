@@ -54,20 +54,42 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
             <p className="text-gray-500 dark:text-gray-400 font-medium">No songs found.</p>
           </div>
         ) : (
-          songs.map(s => (
-            <div 
-              key={s.id} 
-              className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center hover:shadow-md transition-shadow group"
-            >
+          songs.map(s => {
+            const ownerName = (!s.ownerId || s.ownerId === 'Unknown') ? 'Unknown' : ownerNames[s.ownerId] || 'Loading...';
+            const displayOwner = ownerName !== 'Admin' && ownerName !== 'Loading...';
+
+            return (
               <div 
-                className="text-left flex-1 cursor-pointer min-w-0 mr-4"
-                onClick={() => onSelectSong(s.id)}
+                key={s.id} 
+                className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center hover:shadow-md transition-shadow group"
               >
-                <p className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{s.title}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{s.authors} - Created: {new Date(s.createdAt).toLocaleDateString()} - {s.body.length} chars - key: {s.key} - tempo: {s.tempo > 0 ? s.tempo : 'N/A'} - Owner: {(!s.ownerId || s.ownerId === 'Unknown') ? 'Unknown' : ownerNames[s.ownerId] || 'Loading...'}</p>
-              </div>
-              
-              <div className="flex items-center space-x-1 flex-shrink-0">
+                <div 
+                  className="text-left flex-1 cursor-pointer min-w-0 mr-4"
+                  onClick={() => onSelectSong(s.id)}
+                >
+                  <p className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{s.title}</p>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center space-x-2 overflow-hidden">
+                    <span className="truncate">{s.authors}</span>
+                    <span className="flex-shrink-0 text-gray-300 dark:text-gray-600">&middot;</span>
+                    <span className="flex-shrink-0">
+                      {new Date(s.createdAt).toLocaleDateString()}
+                    </span>
+                    {s.key && (
+                      <>
+                        <span className="flex-shrink-0 text-gray-300 dark:text-gray-600">&middot;</span>
+                        <span className="flex-shrink-0">Key: {s.key}</span>
+                      </>
+                    )}
+                    {displayOwner && (
+                      <>
+                        <span className="flex-shrink-0 text-gray-300 dark:text-gray-600">&middot;</span>
+                        <span className="flex-shrink-0">Owner: {ownerName}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-1 flex-shrink-0">
                 <button
                   onClick={(e) => { e.stopPropagation(); onEditSong(s); }}
                   className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
@@ -90,8 +112,9 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                   <i className="fa-solid fa-chevron-right"></i>
                 </button>
               </div>
-            </div>
-          ))
+              </div>
+            );
+          })
         )}
       </div>
     </div>

@@ -59,6 +59,12 @@ const App: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const transposeHandledRef = useRef<string>('');
 
+  const recentSongs = useMemo(() => {
+    return [...allSongs]
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, 50);
+  }, [allSongs]);
+
   // Sync theme
   const { setTheme } = useTheme();
 
@@ -563,7 +569,7 @@ const App: React.FC = () => {
         )}
         {view === 'RECENT_SONGS' && (
           <RecentSongsView 
-            songs={allSongs.slice(0, 50)}
+            songs={recentSongs}
             onSelectSong={handleUserSongSelect}
             onEditSong={(song) => {
               setSongToEdit(song);
@@ -575,6 +581,7 @@ const App: React.FC = () => {
         )}
         {view === 'SETLIST_MANAGER' && (
           <SetlistManager
+            user={user}
             setlists={setlists}
             allSongs={allSongs}
             currentSong={currentSong ?? undefined}
@@ -677,7 +684,7 @@ const App: React.FC = () => {
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-list-ul w-6"></i>
-                <span className="font-medium">My Set-Lists</span>
+                <span className="font-medium">Set Lists</span>
               </button>
               <button 
                 onClick={() => handleNavigation('RECENT_SONGS')}
