@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { User, UserRole, UserSettings } from '../types';
 import { MOCK_USER } from '../constants';
 import { dbService } from '../services/dbService';
@@ -10,7 +10,8 @@ import {
   createUserWithEmailAndPassword, 
   sendPasswordResetEmail, 
   sendEmailVerification,
-  signOut
+  signOut,
+  onAuthStateChanged
 } from 'firebase/auth';
 
 export const useAuth = () => {
@@ -23,32 +24,7 @@ export const useAuth = () => {
   const [resetSent, setResetSent] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
 
-  // Initialize user from local storage on mount
-  useEffect(() => {
-    const storedUser = localStorage.getItem('cloudsong_user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error("Failed to parse stored user", e);
-        localStorage.removeItem('cloudsong_user');
-      }
-    }
-  }, []);
-
-  const getAuthErrorMessage = (error: any): string => {
-    switch (error.code) {
-      case 'auth/invalid-credential': return "Invalid email or password.";
-      case 'auth/email-already-in-use': return "An account with this email already exists.";
-      case 'auth/weak-password': return "Password should be at least 6 characters.";
-      case 'auth/user-not-found': return "No user found with this email.";
-      case 'auth/invalid-email': return "Invalid email address.";
-      case 'auth/popup-closed-by-user': return "";
-      default: return error.message || "An authentication error occurred.";
-    }
-  };
-
-  const handleSignInSuccess = async (firebaseUser: FirebaseUser) => {
+  const handleSignInSuccess = useCallback(async (firebaseUser: FirebaseUser) => {
     try {
       const userAuthData: User = {
         id: firebaseUser.uid,
@@ -66,6 +42,51 @@ export const useAuth = () => {
       console.error("Error syncing user:", error);
       setAuthError("Failed to sync user data.");
       throw error;
+    }
+  }, []);
+
+  // Initialize user from local storage on mount AND listen to Firebase Auth state
+  useEffect(() => {
+    // 1. Optimistic load from LocalStorage for immediate UI
+    const storedUser = localStorage.getItem('cloudsong_user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error("Failed to parse stored user", e);
+        localStorage.removeItem('cloudsong_user');
+      }
+    }
+
+    // 2. Subscribe to Firebase Auth state changes
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Enforce email verification for password accounts on auto-login
+        if (firebaseUser.providerData.some(p => p.providerId === 'password') && !firebaseUser.emailVerified) {
+          // User has a token but isn't verified. Don't auto-login.
+          // We don't force signOut() here to avoid interfering with the sign-up flow,
+          // but we ensure the app state remains unauthenticated.
+          return;
+        }
+        await handleSignInSuccess(firebaseUser);
+      } else {
+        setUser(null);
+        localStorage.removeItem('cloudsong_user');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [handleSignInSuccess]);
+
+  const getAuthErrorMessage = (error: any): string => {
+    switch (error.code) {
+      case 'auth/invalid-credential': return "Invalid email or password.";
+      case 'auth/email-already-in-use': return "An account with this email already exists.";
+      case 'auth/weak-password': return "Password should be at least 6 characters.";
+      case 'auth/user-not-found': return "No user found with this email.";
+      case 'auth/invalid-email': return "Invalid email address.";
+      case 'auth/popup-closed-by-user': return "";
+      default: return error.message || "An authentication error occurred.";
     }
   };
 
@@ -167,8 +188,7 @@ export const useAuth = () => {
     } catch (e) {
       console.error("Logout error", e);
     }
-    setUser(null);
-    localStorage.removeItem('cloudsong_user');
+    // State cleanup is now handled by the onAuthStateChanged listener
     setShowEmailForm(false);
     setEmail('');
     setPassword('');

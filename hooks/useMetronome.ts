@@ -5,7 +5,12 @@ export const useMetronome = (baseTempo?: number) => {
   const [active, setActive] = useState(false);
   const [beatFlash, setBeatFlash] = useState(false);
   const [tapTimes, setTapTimes] = useState<number[]>([]);
+
+  // Refs for Web Audio API scheduling and timers
   const audioContextRef = useRef<AudioContext | null>(null);
+  const nextNoteTimeRef = useRef<number>(0);
+  const schedulerTimerIdRef = useRef<number | null>(null);
+  const beatFlashTimeoutIdRef = useRef<number | null>(null);
 
   // If localTempo is set (via tap/input), use it; otherwise use the base tempo
   const effectiveTempo = localTempo ?? baseTempo;
@@ -16,22 +21,32 @@ export const useMetronome = (baseTempo?: number) => {
     setLocalTempo(undefined);
   }, [baseTempo]);
 
-  const playClick = useCallback(() => {
+  // Cleanup audio context and timers on unmount
+  useEffect(() => {
+    return () => {
+      audioContextRef.current?.close();
+      if (schedulerTimerIdRef.current) clearTimeout(schedulerTimerIdRef.current);
+      if (beatFlashTimeoutIdRef.current) clearTimeout(beatFlashTimeoutIdRef.current);
+    };
+  }, []);
+
+  const playClick = useCallback((time: number) => {
     if (!audioContextRef.current) return;
     const ctx = audioContextRef.current;
     
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
+    // A simple, short click sound
     osc.connect(gain);
     gain.connect(ctx.destination);
 
-    osc.frequency.setValueAtTime(1000, ctx.currentTime);
-    gain.gain.setValueAtTime(0.5, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.frequency.setValueAtTime(1000, time);
+    gain.gain.setValueAtTime(0.5, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
 
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.05);
+    osc.start(time);
+    osc.stop(time + 0.05);
   }, []);
 
   const toggle = useCallback(() => {
@@ -45,6 +60,10 @@ export const useMetronome = (baseTempo?: number) => {
       }
       if (audioContextRef.current?.state === 'suspended') {
         audioContextRef.current.resume();
+      }
+      // Reset scheduler time when starting to avoid a jump
+      if (audioContextRef.current) {
+        nextNoteTimeRef.current = audioContextRef.current.currentTime + 0.1;
       }
     }
     setActive(prev => !prev);
@@ -73,40 +92,55 @@ export const useMetronome = (baseTempo?: number) => {
     });
   }, []);
 
+  // The core Web Audio API scheduler. This is more accurate than setInterval.
   useEffect(() => {
     if (!active || !effectiveTempo || effectiveTempo <= 0) {
+      // Stop any running schedulers
+      if (schedulerTimerIdRef.current) clearTimeout(schedulerTimerIdRef.current);
       setBeatFlash(false);
       return;
     }
 
-    setBeatFlash(true);
-    playClick();
-    const initialTimeout = setTimeout(() => setBeatFlash(false), 150);
+    const scheduleAheadTime = 0.1;   // How far ahead to schedule audio (sec)
+    const schedulerLookahead = 25.0; // How often to call the scheduler (ms)
 
-    const intervalMs = 60000 / effectiveTempo;
-    const intervalId = setInterval(() => {
-      setBeatFlash(true);
-      playClick();
-      setTimeout(() => setBeatFlash(false), 150);
-    }, intervalMs);
+    const scheduler = () => {
+      const ctx = audioContextRef.current;
+      if (!ctx || !active) return; // Stop if context is gone or metronome is off
+
+      // While there are notes that will need to play before the next scheduler check
+      while (nextNoteTimeRef.current < ctx.currentTime + scheduleAheadTime) {
+        // Schedule the audio click
+        playClick(nextNoteTimeRef.current);
+
+        // Schedule the visual flash to sync with the audio
+        const flashDelay = (nextNoteTimeRef.current - ctx.currentTime) * 1000;
+        setTimeout(() => {
+          setBeatFlash(true);
+          if (beatFlashTimeoutIdRef.current) clearTimeout(beatFlashTimeoutIdRef.current);
+          beatFlashTimeoutIdRef.current = setTimeout(() => setBeatFlash(false), 100) as any;
+        }, flashDelay);
+
+        // Advance the next note time
+        const secondsPerBeat = 60.0 / effectiveTempo;
+        nextNoteTimeRef.current += secondsPerBeat;
+      }
+      schedulerTimerIdRef.current = setTimeout(scheduler, schedulerLookahead) as any;
+    };
+
+    scheduler();
 
     return () => {
-      clearInterval(intervalId);
-      clearTimeout(initialTimeout);
+      if (schedulerTimerIdRef.current) clearTimeout(schedulerTimerIdRef.current);
+      if (beatFlashTimeoutIdRef.current) clearTimeout(beatFlashTimeoutIdRef.current);
     };
   }, [active, effectiveTempo, playClick]);
 
-  return {
-    tempo: effectiveTempo,
-    setTempo: setLocalTempo,
-    active,
-    toggle,
-    beatFlash,
-    tap,
-    reset: () => {
-      setLocalTempo(undefined);
-      setActive(false);
-      setTapTimes([]);
-    }
-  };
+  const reset = useCallback(() => {
+    setLocalTempo(undefined);
+    setActive(false);
+    setTapTimes([]);
+  }, []);
+
+  return { tempo: effectiveTempo, setTempo: setLocalTempo, active, toggle, beatFlash, tap, reset };
 };

@@ -2,10 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
-import { storageService } from '../services/storageService';
-import { db } from '../firebaseConfig';
-import { doc, collection } from 'firebase/firestore';
-import { ProgressBar } from './ProgressBar';
+import { PdfUploader } from './PdfUploader';
 
 interface SongFormProps {
   song?: Song;
@@ -14,7 +11,6 @@ interface SongFormProps {
 }
 
 const LANGUAGES = ['English', 'Vietnamese', 'French', 'Spanish'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const DEFAULT_FORM_DATA: Partial<Song> = {
   title: '',
@@ -30,11 +26,9 @@ const DEFAULT_FORM_DATA: Partial<Song> = {
 
 const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   const [formData, setFormData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  
-  const [dragActive, setDragActive] = useState(false);
+  const [initialData, setInitialData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
+  const [isDirty, setIsDirty] = useState(false);
+  const [errors, setErrors] = useState<Partial<Record<keyof Song, string>>>({});
   const [error, setError] = useState<string | null>(null);
 
   const { 
@@ -47,17 +41,11 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
 
   useEffect(() => {
     if (song) {
-      setFormData(song);
-      if (song.pdfUrl) {
-        // Try to derive a name from the URL if we don't have it
-        try {
-            const url = new URL(song.pdfUrl);
-            const pathParts = url.pathname.split('/');
-            setFileName(decodeURIComponent(pathParts[pathParts.length - 1]));
-        } catch {
-            setFileName("PDF file");
-        }
-      }
+      const data = { ...DEFAULT_FORM_DATA, ...song };
+      setFormData(data);
+      setInitialData(data);
+    } else {
+      setInitialData(DEFAULT_FORM_DATA);
     }
   }, [song]);
 
@@ -68,105 +56,58 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     }
   }, [metronomeTempo]);
 
-  const handleFile = async (file: File) => {
-    if (file.type !== 'application/pdf') {
-      setError('Only PDF files are allowed.');
-      return;
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      setError('File size must be under 10MB.');
-      return;
-    }
-
-    setError(null);
-    setUploading(true);
-    setUploadProgress(0);
-    setFileName(file.name);
-
-    // We need a song ID to create the storage path.
-    // If we have one, use it. If not, generate a new one for the upload.
-    const songId = formData.id || doc(collection(db, 'songs')).id;
-
-    try {
-      const downloadUrl = await storageService.uploadSongPdf(file, songId, (progress) => {
-        setUploadProgress(progress);
-      });
-      
-      // On success, update the form with the new ID and URL
-      setFormData(prev => ({
-        ...prev,
-        id: songId, // Ensure the form data has the ID
-        isPdf: true,
-        pdfUrl: downloadUrl,
-        body: '', // Clear body if switching to PDF
-      }));
-
-    } catch (err) {
-      console.error("PDF Upload failed:", err);
-      setError('Failed to upload PDF. Please try again.');
-      setFileName(null); // Clear file name on error
-      setFormData(prev => ({
-        ...prev,
-        pdfUrl: undefined
-      }));
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const validateKeywords = (val: string) => {
-    return val.split(' ').every(word => /^[\p{L}\p{N}-]*$/u.test(word));
-  };
-
-  const handleSave = () => {
-    console.log("Attempting to save song with data:", formData);
-    if (!formData.title || formData.title.length > 80) {
-      setError('Title is required and must be max 80 characters.');
-      return;
-    }
-    if (formData.keywords && !validateKeywords(Array.isArray(formData.keywords) ? formData.keywords.join(' ') : formData.keywords)) {
-      setError('Keywords must be alpha-numeric (international allowed) and hyphen only, separated by spaces.');
-      return;
-    }
-    if (formData.tempo !== undefined && (formData.tempo < 0 || formData.tempo > 400)) {
-      setError('Tempo must be a positive number (or 0) less than or equal to 400.');
-      return;
-    }
-    if (formData.isPdf && !formData.pdfUrl) {
-      setError('Please upload a PDF file.');
-      return;
-    }
-    onSave(formData);
-  };
+  // Check for unsaved changes
+  useEffect(() => {
+    setIsDirty(JSON.stringify(formData) !== JSON.stringify(initialData));
+  }, [formData, initialData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSave();
   };
 
+  const validate = (): boolean => {
+    const newErrors: Partial<Record<keyof Song, string>> = {};
+    
+    if (!formData.title || formData.title.trim() === '') {
+      newErrors.title = 'Title is required.';
+    } else if (formData.title.length > 80) {
+      newErrors.title = 'Title must be 80 characters or less.';
+    }
+
+    if (formData.key && !/^[A-G][#b]?m?$/.test(formData.key)) {
+      newErrors.key = 'Invalid key format. Use G, C#m, Bb, etc.';
+    }
+
+    if (formData.tempo !== undefined && (formData.tempo < 0 || formData.tempo > 400)) {
+      newErrors.tempo = 'Tempo must be between 0 and 400.';
+    }
+    
+    const keywords = Array.isArray(formData.keywords) ? formData.keywords : [];
+    const invalidKeyword = keywords.find(word => !/^[\p{L}\p{N}-]*$/u.test(word));
+    if (invalidKeyword) {
+      newErrors.keywords = `Invalid keyword "${invalidKeyword}". Keywords must be alpha-numeric (intl allowed) and hyphen only.`;
+    }
+
+    if (formData.isPdf && !formData.pdfUrl) {
+      newErrors.pdfUrl = 'A PDF file must be uploaded.';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSave = () => {
+    if (!validate()) {
+      setError('Please fix the errors before saving.');
+      return;
+    }
+    setError(null);
+    onSave(formData);
+  };
+
   const handleCancel = () => {
-    const initialData = song || DEFAULT_FORM_DATA;
-    // Check if form data has changed from initial state
-    if (JSON.stringify(formData) !== JSON.stringify(initialData)) {
+    if (isDirty) {
       if (window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
         onCancel();
       }
@@ -220,6 +161,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               value={formData.title}
               onChange={e => setFormData({ ...formData, title: e.target.value })}
             />
+            {errors.title && <p className="text-red-500 text-xs mt-1 ml-1">{errors.title}</p>}
           </div>
 
           {/* Author */}
@@ -233,6 +175,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               value={formData.authors}
               onChange={e => setFormData({ ...formData, authors: e.target.value })}
             />
+            {errors.authors && <p className="text-red-500 text-xs mt-1 ml-1">{errors.authors}</p>}
           </div>
 
           {/* Key */}
@@ -246,12 +189,13 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               value={formData.key}
               onChange={e => setFormData({ ...formData, key: e.target.value })}
             />
+            {errors.key && <p className="text-red-500 text-xs mt-1 ml-1">{errors.key}</p>}
           </div>
 
           {/* Tempo */}
           <div className="md:col-span-1">
             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Tempo (BPM)</label>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 relative">
               <input
                 type="number"
                 min={0}
@@ -261,6 +205,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
                 value={formData.tempo ?? ''}
                 onChange={e => setFormData({ ...formData, tempo: e.target.value === '' ? undefined : parseInt(e.target.value) })}
               />
+              {errors.tempo && <p className="absolute -bottom-4 left-1 text-red-500 text-xs">{errors.tempo}</p>}
               <button
                 type="button"
                 onClick={handleTap}
@@ -295,9 +240,10 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               placeholder="e.g., hymn classic worship"
               className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
               value={Array.isArray(formData.keywords) ? formData.keywords.join(' ') : formData.keywords}
-              onChange={e => setFormData({ ...formData, keywords: e.target.value.split(' ') })}
+              onChange={e => setFormData({ ...formData, keywords: e.target.value.split(/\s+/).filter(Boolean) })}
             />
             <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 uppercase font-bold tracking-wider">Alpha-numeric (intl allowed) and hyphen only, space separated</p>
+            {errors.keywords && <p className="text-red-500 text-xs mt-1 ml-1">{errors.keywords}</p>}
           </div>
 
           {/* Language */}
@@ -333,49 +279,17 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
         {/* Content Area */}
         <div>
           {formData.isPdf ? (
-            <div 
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={`relative border-2 border-dashed rounded-3xl p-8 md:p-12 text-center transition-all ${
-                dragActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50'
-              } ${formData.pdfUrl && !uploading ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700' : ''}`}
-            >
-              <input 
-                type="file" 
-                className="hidden" 
-                id="pdf-upload" 
-                accept="application/pdf"
-                onChange={(e) => e.target.files && handleFile(e.target.files[0])}
-              />
-              <label htmlFor="pdf-upload" className="cursor-pointer">
-                {uploading ? (
-                  <div className="space-y-2">
-                    <i className="fa-solid fa-cloud-arrow-up text-5xl text-blue-500 dark:text-blue-400 animate-bounce"></i>
-                    <p className="text-blue-700 dark:text-blue-300 font-bold">Uploading PDF...</p>
-                    <p className="text-xs text-blue-600 dark:text-blue-400 truncate max-w-full">{fileName}</p>
-                    <div className="max-w-xs mx-auto pt-2"><ProgressBar progress={uploadProgress} /></div>
-                  </div>
-                ) : formData.pdfUrl ? (
-                  <div className="space-y-2">
-                    <i className="fa-solid fa-file-circle-check text-5xl text-green-500 dark:text-green-400"></i>
-                    <p className="text-green-700 dark:text-green-300 font-bold">PDF Uploaded</p>
-                    <p className="text-xs text-green-600 dark:text-green-400 truncate max-w-full">{fileName}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Click or drag to replace</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <i className="fa-solid fa-file-pdf text-5xl text-gray-400 dark:text-gray-500"></i>
-                    <div>
-                      <p className="text-lg font-bold text-gray-700 dark:text-gray-200">Drop PDF here</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">or click to browse</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Max file size: 10MB</p>
-                    </div>
-                  </div>
-                )}
-              </label>
-            </div>
+            <PdfUploader
+              songId={formData.id}
+              currentPdfUrl={formData.pdfUrl}
+              validationError={errors.pdfUrl}
+              onUploadSuccess={(url, id) => {
+                setFormData(prev => ({ ...prev, id, isPdf: true, pdfUrl: url, body: '' }));
+                setError(null);
+                setErrors(prev => ({ ...prev, pdfUrl: undefined }));
+              }}
+              onUploadError={(msg) => setError(msg)}
+            />
           ) : (
             <div className="space-y-2">
               <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">Lyrics & Chords (ChordPro-like format)</label>

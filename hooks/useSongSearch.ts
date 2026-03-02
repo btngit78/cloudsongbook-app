@@ -60,6 +60,43 @@ export const useSearchRegex = (query: string) => {
   }, [query]);
 };
 
+const normalizeForSearch = (str: string): string => {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+};
+
+const getLevenshteinDistance = (a: string, b: string): number => {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          Math.min(
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          )
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+};
+
 export type SortOrder = 'relevance' | 'lastUsed' | 'dateAdded' | 'alphabetic';
 
 export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrder, sortDirection: 'asc' | 'desc') => {
@@ -68,7 +105,38 @@ export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrd
 
     const pattern = getSearchPattern(query);
     const regex = new RegExp(pattern, 'i');
-    const filtered = songs.filter(s => regex.test(s.title) || regex.test(s.authors));
+    const normalizedQuery = normalizeForSearch(query);
+    const isShortQuery = normalizedQuery.length < 3;
+
+    const filtered = songs.filter(s => {
+      // 1. Exact/Regex Match (High Priority)
+      if (regex.test(s.title) || regex.test(s.authors)) return true;
+
+      // 2. Fuzzy Match (Typo handling)
+      if (isShortQuery) return false;
+
+      const normTitle = normalizeForSearch(s.title);
+      const normAuthor = normalizeForSearch(s.authors);
+      
+      // Dynamic threshold based on query length
+      const maxErrors = Math.max(1, Math.floor(normalizedQuery.length / 4));
+
+      // Check words in title
+      const titleWords = normTitle.split(/\s+/);
+      if (titleWords.some(w => Math.abs(w.length - normalizedQuery.length) <= 2 && getLevenshteinDistance(normalizedQuery, w) <= maxErrors)) return true;
+      
+      // Check words in author
+      const authorWords = normAuthor.split(/\s+/);
+      if (authorWords.some(w => Math.abs(w.length - normalizedQuery.length) <= 2 && getLevenshteinDistance(normalizedQuery, w) <= maxErrors)) return true;
+
+      // Check full string if lengths are close
+      if (Math.abs(normTitle.length - normalizedQuery.length) <= 3) {
+         if (getLevenshteinDistance(normalizedQuery, normTitle) <= maxErrors + 1) return true;
+      }
+
+      return false;
+    });
+
     const dir = sortDirection === 'asc' ? 1 : -1;
 
     // Now, sort the filtered results
@@ -82,12 +150,24 @@ export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrd
       case 'relevance':
       default:
         const sorted = [...filtered].sort((a, b) => {
-          const aTitleMatch = regex.test(a.title);
-          const bTitleMatch = regex.test(b.title);
+          const aRegex = regex.test(a.title) || regex.test(a.authors);
+          const bRegex = regex.test(b.title) || regex.test(b.authors);
+
+          // Regex matches always come before fuzzy matches
+          if (aRegex && !bRegex) return -1;
+          if (!aRegex && bRegex) return 1;
           
-          if (aTitleMatch && !bTitleMatch) return -1;
-          if (!aTitleMatch && bTitleMatch) return 1;
-          return 0;
+          if (aRegex && bRegex) {
+            const aTitleMatch = regex.test(a.title);
+            const bTitleMatch = regex.test(b.title);
+            
+            if (aTitleMatch && !bTitleMatch) return -1;
+            if (!aTitleMatch && bTitleMatch) return 1;
+            return 0;
+          }
+          
+          // For fuzzy matches, fallback to alphabetic
+          return a.title.localeCompare(b.title);
         });
         // 'asc' is default (title matches first). 'desc' is the reverse.
         if (sortDirection === 'desc') {

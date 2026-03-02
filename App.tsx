@@ -17,7 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { useSongs } from './hooks/useSong';
 import { useSetlists } from './hooks/useSetlists';
 import { useScroll } from './hooks/useScroll';
-import { useTranspose } from './hooks/useTranspose';
+import { useTranspose, getKeyLabel } from './hooks/useTranspose';
 import { Header } from './components/Header';
 import { SongList } from './components/SongList';
 import { useSongSearch } from './hooks/useSongSearch';
@@ -57,6 +57,7 @@ const App: React.FC = () => {
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isRouteHandled, setIsRouteHandled] = useState(false);
   const transposeHandledRef = useRef<string>('');
 
   const recentSongs = useMemo(() => {
@@ -64,21 +65,6 @@ const App: React.FC = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
       .slice(0, 50);
   }, [allSongs]);
-
-  // Sync theme
-  const { setTheme } = useTheme();
-
-  const handleNavigation = (targetView: typeof view, callback?: () => void) => {
-    if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
-        return;
-      }
-      setHasUnsavedChanges(false);
-    }
-    if (callback) callback();
-    setView(targetView);
-    setMenuOpen(false);
-  };
 
   const handleSelectSong = useCallback(async (songId: string) => {
     if (hasUnsavedChanges) {
@@ -95,11 +81,6 @@ const App: React.FC = () => {
     return null;
   }, [selectSong, hasUnsavedChanges]);
 
-  // Reset selection when search query changes
-  useEffect(() => {
-    setSelectedIndex(-1);
-  }, [searchQuery]);
-
   const {
     setlists,
     activeSetlist,
@@ -111,11 +92,124 @@ const App: React.FC = () => {
     exitSetlist
   } = useSetlists(user, handleSelectSong);
 
-  const handleUserSongSelect = async (songId: string) => {
+  // --- URL Routing & Deep Linking ---
+  
+  // 1. Sync URL with App State
+  useEffect(() => {
+    if (!isRouteHandled) return;
+    let path = '/';
+    if (view === 'SETTINGS') {
+      path = '/settings';
+    } else if (view === 'ADMIN_DASHBOARD') {
+      path = '/admin';
+    } else if (view === 'SETLIST_MANAGER') {
+      path = '/setlists';
+    } else if (view === 'RECENT_SONGS') {
+      path = '/recent';
+    } else if (view === 'SONG_VIEW' && currentSong) {
+      if (activeSetlist) {
+        // New robust URL for a song within a setlist
+        path = `/setlist/${activeSetlist.id}/${activeSetlistIndex}`;
+      } else {
+        // New robust URL for a standalone song
+        path = `/song/${currentSong.id}`;
+      }
+    }
+
+    // Only push if different to avoid duplicate history entries
+    if (window.location.pathname !== path) {
+      window.history.pushState({ view, songId: currentSong?.id, setlistId: activeSetlist?.id, setlistIndex: activeSetlistIndex }, '', path);
+    }
+  }, [view, currentSong, activeSetlist, activeSetlistIndex, isRouteHandled]);
+
+  // 2. Handle Browser Navigation (Back/Forward) and Initial Load
+  useEffect(() => {
+    const handleRoute = async () => {
+      // Wait for data to be ready
+      const pathSegments = window.location.pathname.substring(1).split('/');
+      const isSetlistRoute = pathSegments[0] === 'setlist' && pathSegments.length >= 2;
+      if (allSongs.length === 0 || (isSetlistRoute && setlists.length === 0)) {
+        return;
+      }
+
+      const path = window.location.pathname.substring(1);
+      if (!path) {
+        if (view !== 'SONG_VIEW') setView('SONG_VIEW'); // Default to home
+        return;
+      }
+
+      const parts = path.split('/').map(p => decodeURIComponent(p));
+      const [route, id, indexStr] = parts;
+
+      // Handle new, robust routing scheme
+      switch (route) {
+        case 'settings': setView('SETTINGS'); return;
+        case 'admin': setView('ADMIN_DASHBOARD'); return;
+        case 'setlists': setView('SETLIST_MANAGER'); return;
+        case 'recent': setView('RECENT_SONGS'); return;
+        case 'song':
+          if (id && allSongs.some(s => s.id === id)) {
+            await selectSong(id);
+            exitSetlist();
+            setView('SONG_VIEW');
+          } else {
+            console.warn(`Song with ID "${id}" not found.`);
+          }
+          return;
+        case 'setlist':
+          if (id && indexStr) {
+            const setlist = setlists.find(s => s.id === id);
+            const index = parseInt(indexStr, 10);
+            if (setlist && !isNaN(index) && index >= 0 && index < setlist.choices.length) {
+              await playSetlist(setlist, index);
+              setView('SONG_VIEW');
+            } else {
+              console.warn(`Setlist (id: ${id}) or index (${indexStr}) is invalid.`);
+            }
+          }
+          return;
+      }
+    };
+
+    window.addEventListener('popstate', handleRoute);
+
+    // Update initial load logic to use new route format
+    const pathSegments = window.location.pathname.substring(1).split('/');
+    const isSetlistRoute = pathSegments[0] === 'setlist';
+    const setlistsReady = !isSetlistRoute || setlists.length > 0;
+
+    if (!isRouteHandled && allSongs.length > 0 && setlistsReady) {
+      handleRoute().finally(() => setIsRouteHandled(true));
+    }
+
+    return () => window.removeEventListener('popstate', handleRoute);
+  }, [allSongs, setlists, playSetlist, selectSong, exitSetlist, isRouteHandled]);
+
+  // Sync theme
+  const { setTheme } = useTheme();
+
+  const handleNavigation = (targetView: typeof view, callback?: () => void) => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+        return;
+      }
+      setHasUnsavedChanges(false);
+    }
+    if (callback) callback();
+    setView(targetView);
+    setMenuOpen(false);
+  };
+
+  // Reset selection when search query changes
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [searchQuery]);
+
+  const handleUserSongSelect = async (songId: string) => { // already async
     if (activeSetlist) {
       const index = activeSetlist.choices.findIndex(c => c.songId === songId);
       if (index !== -1) {
-        navigateSetlist(index);
+        await navigateSetlist(index);
       } else {
         const result = await handleSelectSong(songId);
         if (result) {
@@ -157,7 +251,8 @@ const App: React.FC = () => {
     transpose,
     setTranspose,
     keyInfo,
-    CHROMATIC_SCALE
+    CHROMATIC_SCALE,
+    setTransposeByKey
   } = useTranspose(currentSong);
 
   // Handle Setlist Transpose Mode
@@ -169,6 +264,8 @@ const App: React.FC = () => {
 
     const choice = activeSetlist.choices[activeSetlistIndex];
     if (!choice || !choice.key) return;
+
+    const targetKey = choice.key;
 
     // Ensure we are looking at the correct song (prevents race condition with setlist index)
     if (choice.songId !== currentSong.id) return;
@@ -187,42 +284,35 @@ const App: React.FC = () => {
     // Mark as handled
     transposeHandledRef.current = currentContextId;
 
-    // Normalize target key root
-    const match = choice.key.match(/^([A-G][#b]?)/);
-    if (!match) return;
-    
-    let root = match[1];
-    const flatMap: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
-    if (flatMap[root]) root = flatMap[root];
-    
-    const targetIndex = CHROMATIC_SCALE.indexOf(root);
-    if (targetIndex === -1) return;
-    
-    const originalIndex = keyInfo.originalIndex;
-    
-    // If already in target key (original key matches target), do nothing
-    if (originalIndex === targetIndex) return;
-
-    let diff = targetIndex - originalIndex;
-    
-    // Normalize to shortest path
-    if (diff > 6) diff -= 12;
-    if (diff < -6) diff += 12;
+    // Check if we are already in the target key to avoid unnecessary prompts/updates
+    const match = targetKey.match(/^([A-G][#b]?)/);
+    if (match) {
+      let targetRoot = match[1];
+      const flatMap: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+      if (flatMap[targetRoot]) targetRoot = flatMap[targetRoot];
+      
+      const targetIndex = CHROMATIC_SCALE.indexOf(targetRoot);
+      if (targetIndex !== -1 && targetIndex === keyInfo.originalIndex) {
+        return;
+      }
+    }
 
     let timeoutId: ReturnType<typeof setTimeout>;
     if (mode === 'auto') {
-      setTranspose(diff);
+      setTransposeByKey(targetKey);
     } else if (mode === 'confirm') {
       // Timeout to ensure UI is stable before alert
       timeoutId = setTimeout(() => {
-        if (window.confirm(`Song: ${currentSong.title}\n\nTranspose to ${choice.key} from ${keyInfo.currentKey}?`)) {
-          setTranspose(diff);
+        // We can check if keys are different before prompting, but setTransposeByKey handles the logic.
+        // A simple string check on the choice key vs current key is a decent proxy for "is this different".
+        if (window.confirm(`Song: ${currentSong.title}\n\nTranspose to ${targetKey} from ${keyInfo.currentKey}?`)) {
+          setTransposeByKey(targetKey);
         }
       }, 100);
     }
     
     return () => clearTimeout(timeoutId);
-  }, [currentSong?.id, activeSetlist, activeSetlistIndex, keyInfo?.originalIndex, transpose]);
+  }, [currentSong?.id, activeSetlist, activeSetlistIndex, keyInfo, transpose, setTransposeByKey, user?.settings?.setlistTransposeMode, CHROMATIC_SCALE]);
 
   // Sync User Settings Theme with ThemeProvider
   useEffect(() => {
@@ -232,8 +322,6 @@ const App: React.FC = () => {
   }, [user?.settings.theme, setTheme]);
 
   const handleSaveSong = async (songData: Partial<Song>) => {
-  //  console.log("Saving song with data:", songData);
-    console.log("Current user in handleSaveSong:", user);
     if (!user) {
       console.error("User not authenticated. Cannot save song.");
       return;
@@ -251,27 +339,10 @@ const App: React.FC = () => {
     }
   };
 
-  const handlePlaySetlist = (setlist: SetList) => {
-    playSetlist(setlist);
+  const handlePlaySetlist = async (setlist: SetList) => {
+    await playSetlist(setlist);
     setView('SONG_VIEW');
     setMenuOpen(false);
-  };
-
-  const getKeyLabel = (note: string, suffix: string) => {
-    const flatMap: Record<string, string> = {
-      'C#': 'Db',
-      'D#': 'Eb',
-      'F#': 'Gb',
-      'G#': 'Ab',
-      'A#': 'Bb'
-    };
-    if (note === 'C#') return `Db${suffix}/C#${suffix}`;
-    if (note === 'F#') return `Gb${suffix}/F#${suffix}`;
-    if (note === 'G#') return `Ab${suffix}/G#${suffix}`;
-    if (flatMap[note]) {
-      return `${flatMap[note]}${suffix}`;
-    }
-    return `${note}${suffix}`;
   };
 
   if (!user) {
@@ -404,12 +475,7 @@ const App: React.FC = () => {
                     className={`appearance-none bg-transparent font-bold text-sm py-1 pl-2 pr-6 cursor-pointer focus:outline-none ${transpose !== 0 ? 'text-blue-900 dark:text-blue-100' : 'text-gray-900 dark:text-white'}`}
                     value={keyInfo.currentKey}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      // Remove suffix to find root
-                      const selectedRoot = val.replace(keyInfo!.suffix, '');
-                      const targetIndex = CHROMATIC_SCALE.indexOf(selectedRoot);
-                      const diff = targetIndex - keyInfo!.originalIndex;
-                      setTranspose(diff);
+                      setTransposeByKey(e.target.value);
                     }}
                   >
                     {CHROMATIC_SCALE.map((note) => (

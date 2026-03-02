@@ -1,76 +1,73 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { SetList, User } from '../types';
 import { dbService } from '../services/dbService';
 
-export const useSetlists = (user: User | null, selectSong: (songId: string) => void) => {
+export const useSetlists = (user: User | null, selectSong: (songId: string) => Promise<any>) => {
   const [setlists, setSetlists] = useState<SetList[]>([]);
   const [activeSetlist, setActiveSetlist] = useState<SetList | null>(null);
   const [activeSetlistIndex, setActiveSetlistIndex] = useState(0);
 
   // Load setlists when user changes
   useEffect(() => {
-    if (user) {
-      dbService.getSetlists().then(setSetlists);
-    } else {
-      setSetlists([]);
-      setActiveSetlist(null);
-      setActiveSetlistIndex(0);
-    }
+    // Load setlists for everyone (public read)
+    dbService.getSetlists().then(setSetlists);
   }, [user]);
 
-  const saveSetlist = (setlist: SetList) => {
-    const existingIdx = setlists.findIndex(s => s.id === setlist.id);
-    let newSetlists;
-    if (existingIdx >= 0) {
-      newSetlists = [...setlists];
-      newSetlists[existingIdx] = setlist;
-    } else {
-      newSetlists = [...setlists, setlist];
-    }
-    setSetlists(newSetlists);
+  const saveSetlist = useCallback((setlist: SetList) => {
+    setSetlists(currentSetlists => {
+      const existingIdx = currentSetlists.findIndex(s => s.id === setlist.id);
+      if (existingIdx >= 0) {
+        const newSetlists = [...currentSetlists];
+        newSetlists[existingIdx] = setlist;
+        return newSetlists;
+      } else {
+        return [...currentSetlists, setlist];
+      }
+    });
     if (user) dbService.saveSetlist(setlist);
-  };
+  }, [user]);
 
-  const deleteSetlist = (id: string) => {
-    const newSetlists = setlists.filter(s => s.id !== id);
-    setSetlists(newSetlists);
+  const deleteSetlist = useCallback((id: string) => {
+    setSetlists(currentSetlists => currentSetlists.filter(s => s.id !== id));
     dbService.deleteSetlist(id);
-    if (activeSetlist?.id === id) {
-        setActiveSetlist(null);
-        setActiveSetlistIndex(0);
-    }
-  };
+    setActiveSetlist(currentActive => {
+      if (currentActive?.id === id) {
+          setActiveSetlistIndex(0);
+          return null;
+      }
+      return currentActive;
+    });
+  }, []);
 
-  const playSetlist = (setlist: SetList) => {
+  const playSetlist = useCallback(async (setlist: SetList, startIndex: number = 0) => {
     setActiveSetlist(setlist);
-    setActiveSetlistIndex(0);
-    if (setlist.choices && setlist.choices.length > 0) {
-      selectSong(setlist.choices[0].songId);
+    setActiveSetlistIndex(startIndex);
+    if (setlist.choices && setlist.choices.length > startIndex) {
+      await selectSong(setlist.choices[startIndex].songId);
     }
     // Update lastUsedAt
     const updated = { ...setlist, lastUsedAt: Date.now() };
-    // We update local state immediately for UI responsiveness, then save to DB
     saveSetlist(updated);
-  };
+  }, [selectSong, saveSetlist]);
 
-  const navigateSetlist = (direction: 'next' | 'prev' | number) => {
+  const navigateSetlist = useCallback(async (direction: 'next' | 'prev' | number) => {
     if (!activeSetlist) return;
+
     let newIndex = activeSetlistIndex;
-    
     if (direction === 'next') newIndex++;
     else if (direction === 'prev') newIndex--;
     else newIndex = direction;
 
     if (activeSetlist.choices && newIndex >= 0 && newIndex < activeSetlist.choices.length) {
       setActiveSetlistIndex(newIndex);
-      selectSong(activeSetlist.choices[newIndex].songId);
+      await selectSong(activeSetlist.choices[newIndex].songId);
     }
-  };
+  }, [activeSetlist, activeSetlistIndex, selectSong]);
 
-  const exitSetlist = () => {
+  const exitSetlist = useCallback(() => {
     setActiveSetlist(null);
     setActiveSetlistIndex(0);
-  };
+  }, []);
 
   return {
     setlists,
