@@ -197,7 +197,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
             const hasChords = chordLine.trim().length > 0;
 
             return (
-              <div key={lIdx} className="mb-0.5 last:mb-6">
+              <div key={lIdx} className="mb-0.5 last:mb-6 print-avoid-break">
                 {settings.showChords && hasChords && (
                   <div className={`chord whitespace-pre font-mono min-h-[1em] leading-none ${chordClass} mt-0.5`}>{chordLine}</div>
                 )}
@@ -212,7 +212,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
 
   return (
     <div 
-      className={`bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
+      className={`song-renderer-root bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
       style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
     >
       {song.isPdf && song.pdfUrl ? (

@@ -22,6 +22,24 @@ import { Header } from './components/Header';
 import { SongList } from './components/SongList';
 import { useSongSearch } from './hooks/useSongSearch';
 
+const normalizeUrlPart = (str: string) => {
+  if (!str) return '';
+  // This function creates a URL-friendly "slug" from a string.
+  // It's improved to handle non-English characters with diacritics.
+  const normalized = str // e.g., "L'été à Besançon"
+    .toLowerCase()
+    .replace(/ß/g, 'ss') // Handle German Eszett
+    .replace(/æ/g, 'ae') // Handle ligatures
+    .replace(/œ/g, 'oe')
+    .normalize('NFD') // Decompose characters: "l'ete a besancon" + combining marks
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks
+    .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric chars with hyphens
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+  
+  if (normalized.length <= 10) return normalized;
+  return normalized.substring(0, 10).replace(/-+$/, '');
+};
+
 const App: React.FC = () => {
   const { 
     user, 
@@ -108,11 +126,15 @@ const App: React.FC = () => {
       path = '/recent';
     } else if (view === 'SONG_VIEW' && currentSong) {
       if (activeSetlist) {
-        // New robust URL for a song within a setlist
-        path = `/setlist/${activeSetlist.id}/${activeSetlistIndex}`;
+        // New robust URL for a song within a setlist with slug
+        const setlistSlug = normalizeUrlPart(activeSetlist.name);
+        const setlistPart = setlistSlug ? `${activeSetlist.id}-${setlistSlug}` : activeSetlist.id;
+        path = `/setlist/${setlistPart}/${activeSetlistIndex}`;
       } else {
-        // New robust URL for a standalone song
-        path = `/song/${currentSong.id}`;
+        // New robust URL for a standalone song with slug
+        const songSlug = normalizeUrlPart(currentSong.title);
+        const songPart = songSlug ? `${currentSong.id}-${songSlug}` : currentSong.id;
+        path = `/song/${songPart}`;
       }
     }
 
@@ -139,7 +161,7 @@ const App: React.FC = () => {
       }
 
       const parts = path.split('/').map(p => decodeURIComponent(p));
-      const [route, id, indexStr] = parts;
+      const [route, idParam, indexStr] = parts;
 
       // Handle new, robust routing scheme
       switch (route) {
@@ -148,23 +170,26 @@ const App: React.FC = () => {
         case 'setlists': setView('SETLIST_MANAGER'); return;
         case 'recent': setView('RECENT_SONGS'); return;
         case 'song':
-          if (id && allSongs.some(s => s.id === id)) {
-            await selectSong(id);
-            exitSetlist();
-            setView('SONG_VIEW');
-          } else {
-            console.warn(`Song with ID "${id}" not found.`);
+          if (idParam) {
+            const songMatch = allSongs.find(s => idParam === s.id || idParam.startsWith(s.id + '-'));
+            if (songMatch) {
+              await selectSong(songMatch.id);
+              exitSetlist();
+              setView('SONG_VIEW');
+            } else {
+              console.warn(`Song with ID param "${idParam}" not found.`);
+            }
           }
           return;
         case 'setlist':
-          if (id && indexStr) {
-            const setlist = setlists.find(s => s.id === id);
+          if (idParam && indexStr) {
+            const setlistMatch = setlists.find(s => idParam === s.id || idParam.startsWith(s.id + '-'));
             const index = parseInt(indexStr, 10);
-            if (setlist && !isNaN(index) && index >= 0 && index < setlist.choices.length) {
-              await playSetlist(setlist, index);
+            if (setlistMatch && !isNaN(index) && index >= 0 && index < setlistMatch.choices.length) {
+              await playSetlist(setlistMatch, index);
               setView('SONG_VIEW');
             } else {
-              console.warn(`Setlist (id: ${id}) or index (${indexStr}) is invalid.`);
+              console.warn(`Setlist (param: ${idParam}) or index (${indexStr}) is invalid.`);
             }
           }
           return;

@@ -37,6 +37,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
   const [validVideoIds, setValidVideoIds] = useState<string[]>([]);
   const [showFixLinkModal, setShowFixLinkModal] = useState(false);
   const [brokenLinkIds, setBrokenLinkIds] = useState<string[]>([]);
+  const [showCopyFeedback, setShowCopyFeedback] = useState(false);
 
   const hudRef = useRef<HTMLDivElement>(null);
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
@@ -120,6 +121,16 @@ const SongViewer: React.FC<SongViewerProps> = ({
     onTranspose(diff);
   };
 
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShowCopyFeedback(true);
+      setTimeout(() => setShowCopyFeedback(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  };
+
   return (
     <>
       <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
@@ -160,6 +171,26 @@ const SongViewer: React.FC<SongViewerProps> = ({
               <div 
                 className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}
               ></div>
+              <button
+                onClick={handleCopyLink}
+                className={`ml-2 w-7 h-7 flex items-center justify-center rounded-full transition-colors ${showCopyFeedback ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                title={showCopyFeedback ? "Copied!" : "Copy Link"}
+              >
+                {showCopyFeedback ? <i className="fa-solid fa-check text-sm"></i> : <i className="fa-solid fa-link text-sm"></i>}
+              </button>
+              <button
+                onClick={() => {
+                  if (song.isPdf && song.pdfUrl) {
+                    window.open(song.pdfUrl, '_blank');
+                  } else {
+                    window.print();
+                  }
+                }}
+                className="ml-2 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Print Song"
+              >
+                <i className="fa-solid fa-print text-sm"></i>
+              </button>
               <button
                 onClick={async () => {
                   const allIdsInBody = youTubeVideoIds;
@@ -314,12 +345,18 @@ const SongViewer: React.FC<SongViewerProps> = ({
         )}
       </header>
       
-      <LyricsRenderer 
-        song={song} 
-        settings={settings} 
-        transpose={transpose} 
-      />
-
+      <div id="printable-song-content">
+        <div className="print-only">
+          <h1 style={{ fontSize: '20pt', fontWeight: 'bold', color: 'black', marginBottom: '0.25rem' }}>{song.title}</h1>
+          <h2 style={{ fontSize: '12pt', fontStyle: 'italic', color: 'black', marginBottom: '1rem' }}>By {song.authors || 'Unknown'}</h2>
+        </div>
+        <LyricsRenderer 
+          song={song} 
+          settings={settings} 
+          transpose={transpose} 
+        />
+      </div>
+      
       {song.keywords && (
         <div className="mt-8 flex flex-wrap gap-2">
           {song.keywords.map((kw, i) => (
@@ -350,6 +387,71 @@ const SongViewer: React.FC<SongViewerProps> = ({
           onShowYouTube={() => setIsYouTubeModalOpen(true)}
         />
       )}
+
+      <style>{`
+        @page {
+            margin: 0.7in;
+        }
+        .print-only {
+            display: none;
+        }
+        @media print {
+            /* Reset body and html to allow content to flow */
+            html, body {
+                height: auto !important;
+                overflow: visible !important;
+            }
+            /* Hide everything on the page by default */
+            body * {
+                visibility: hidden;
+            }
+            /* Make the printable content and its children visible */
+            #printable-song-content, #printable-song-content * {
+                visibility: visible;
+            }
+            /* Position the content at the top of the page, removing it from its original layout context */
+            #printable-song-content {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                font-size: 12pt;
+            }
+            /* Show the print-specific header */
+            .print-only {
+                display: block;
+            }
+
+            /* --- Overrides for Clean Printing --- */
+            #printable-song-content * {
+                color: black !important; /* 1. Force black text */
+            }
+            .song-renderer-root {
+                /* 2. Reset container to allow multi-page flow */
+                overflow: visible !important;
+                height: auto !important;
+                max-height: none !important;
+                padding: 0 !important;
+                border: none !important;
+                background: transparent !important;
+                box-shadow: none !important;
+            }
+            .print-avoid-break {
+                break-inside: avoid; /* 3. Keep chord/lyric pairs together */
+                page-break-inside: avoid; /* Legacy fallback */
+            }
+            #printable-song-content .chord {
+                color: #2563EB !important; /* 4. Style chords for clarity */
+                font-weight: bold;
+            }
+            #printable-song-content span[class*="text-red"] {
+                font-style: italic;
+            }
+            #printable-song-content a {
+                display: none;
+            }
+        }
+    `}</style>
     </>
   );
 };
