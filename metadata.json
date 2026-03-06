@@ -2,6 +2,5 @@
   "name": "CloudSongBook PWA",
   "description": "A high-performance songbook PWA with cloud sync, local caching, and advanced AI-powered search features.",
   "requestFramePermissions": [
-    "camera"
   ]
 }

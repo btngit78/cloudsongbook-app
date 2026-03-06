@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
     <title>CloudSongBook</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -12,6 +13,17 @@
         body { font-family: 'Inter', sans-serif; }
         .chord { color: #2563eb; font-weight: 700; font-family: 'JetBrains+Mono', monospace; }
         .lyrics { white-space: pre-wrap; line-height: 1.6; }
+        @keyframes slideInUp {
+          from {
+            transform: translateY(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        .animate-slideInUp { animation: slideInUp 0.5s cubic-bezier(0.1, 0.7, 0.5, 1) both; }
     </style>
 <script type="importmap">
 {
