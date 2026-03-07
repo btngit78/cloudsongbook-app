@@ -36,3 +36,7 @@ dist/
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase
+.firebase/**
+.firebase/hosting.ZGlzdA.cache

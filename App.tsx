@@ -74,16 +74,19 @@ const App: React.FC = () => {
   const { searchQuery, setSearchQuery, filteredSongs, sortOrder, sortDirection, handleSortChange } = useSongSearch(allSongs);
 
   // PWA update and offline handling
-  const {
-    offlineReady: [offlineReady, setOfflineReady],
-    needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
-    onRegistered(r) {
+  const [offlineReady, setOfflineReady] = useState(false);
+  const [needRefresh, setNeedRefresh] = useState(false);
+  
+  const { updateServiceWorker } = useRegisterSW({
+    onRegistered() {
       console.log('Service Worker registered.');
+      setOfflineReady(true);
     },
     onRegisterError(error) {
       console.error('Service Worker registration error:', error);
+    },
+    onNeedRefresh() {
+      setNeedRefresh(true);
     },
   });
 
@@ -103,6 +106,7 @@ const App: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isRouteHandled, setIsRouteHandled] = useState(false);
+  const [localShowChords, setLocalShowChords] = useState(user?.settings.showChords ?? true);
   const transposeHandledRef = useRef<string>('');
 
   const recentSongs = useMemo(() => {
@@ -110,6 +114,13 @@ const App: React.FC = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
       .slice(0, 50);
   }, [allSongs]);
+
+  // Sync session-level chord visibility with user settings on login, but not after.
+  useEffect(() => {
+    if (user) {
+      setLocalShowChords(user.settings.showChords);
+    }
+  }, [user?.id]); // Only run when user ID changes (i.e., on login/logout)
 
   const handleSelectSong = useCallback(async (songId: string) => {
     if (hasUnsavedChanges) {
@@ -401,8 +412,8 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md text-center">
-          <div className="mb-6">
-            <i className="fa-solid fa-music text-blue-600 text-6xl"></i>
+          <div className="mb-6 flex justify-center">
+            <img src="/icons/icon-192x192.png" alt="CloudSongBook Logo" className="w-24 h-24 rounded-2xl shadow-lg" />
           </div>
           <h1 className="text-4xl font-extrabold text-gray-900 mb-2">CloudSongBook</h1>
           <p className="text-gray-500 mb-8">Your digital stage companion</p>
@@ -669,6 +680,8 @@ const App: React.FC = () => {
               onExitSetlist={exitSetlist}
               allSongs={allSongs}
               onUpdateSong={handleSaveSong}
+              localShowChords={localShowChords}
+              onSetLocalShowChords={setLocalShowChords}
             />
             <SongNavigator 
               showBackToTop={showBackToTop}
@@ -857,7 +870,7 @@ const App: React.FC = () => {
       {/* PWA Update Prompt */}
       {needRefresh && (
         <UpdatePrompt 
-          onUpdate={() => updateServiceWorker(true)}
+          onUpdate={() => updateServiceWorker()}
           onDismiss={() => setNeedRefresh(false)}
         />
       )}

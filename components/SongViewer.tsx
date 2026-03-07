@@ -21,6 +21,8 @@ interface SongViewerProps {
   onExitSetlist?: () => void;
   allSongs?: Song[];
   onUpdateSong?: (song: Partial<Song>) => void;
+  localShowChords: boolean;
+  onSetLocalShowChords: (show: boolean) => void;
 }
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -29,7 +31,7 @@ const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|e
 
 const SongViewer: React.FC<SongViewerProps> = ({ 
   song, settings, onUpdateSettings, transpose, onTranspose,
-  activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs,
+  activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs, localShowChords, onSetLocalShowChords,
   onUpdateSong
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
@@ -167,6 +169,13 @@ const SongViewer: React.FC<SongViewerProps> = ({
                 title={metronomeActive ? "Stop Metronome" : "Start Metronome"}
               >
                 <i className="fa-solid fa-stopwatch text-[10px]"></i>
+              </button>
+              <button
+                onClick={() => onSetLocalShowChords(!localShowChords)}
+                className={`ml-1 w-5 h-5 flex items-center justify-center rounded-full transition-all ${localShowChords ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400'}`}
+                title={localShowChords ? "Hide Chords" : "Show Chords"}
+              >
+                <i className="fa-solid fa-music text-[10px]"></i>
               </button>
               <div 
                 className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}
@@ -352,7 +361,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
         </div>
         <LyricsRenderer 
           song={song} 
-          settings={settings} 
+          settings={{ ...settings, showChords: localShowChords }}
           transpose={transpose} 
         />
       </div>
