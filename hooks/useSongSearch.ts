@@ -61,40 +61,11 @@ export const useSearchRegex = (query: string) => {
 };
 
 const normalizeForSearch = (str: string): string => {
-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-};
-
-const getLevenshteinDistance = (a: string, b: string): number => {
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-
-  const matrix: number[][] = [];
-
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          Math.min(
-            matrix[i][j - 1] + 1,
-            matrix[i - 1][j] + 1
-          )
-        );
-      }
-    }
-  }
-
-  return matrix[b.length][a.length];
+  return str.normalize('NFD')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 };
 
 export type SortOrder = 'relevance' | 'lastUsed' | 'dateAdded' | 'alphabetic';
@@ -103,39 +74,70 @@ export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrd
   return useMemo(() => {
     if (!query.trim()) return songs;
 
-    const pattern = getSearchPattern(query);
-    const regex = new RegExp(pattern, 'i');
-    const normalizedQuery = normalizeForSearch(query);
-    const isShortQuery = normalizedQuery.length < 3;
+    // Split query into keywords and text
+    const rawTokens = query.trim().split(/\s+/);
+    const keywordGroups: string[][] = [];
+    let currentGroup: string[] = [];
+    let isAndOperation = false;
+    const textParts: string[] = [];
 
-    const filtered = songs.filter(s => {
-      // 1. Exact/Regex Match (High Priority)
-      if (regex.test(s.title) || regex.test(s.authors)) return true;
-
-      // 2. Fuzzy Match (Typo handling)
-      if (isShortQuery) return false;
-
-      const normTitle = normalizeForSearch(s.title);
-      const normAuthor = normalizeForSearch(s.authors);
-      
-      // Dynamic threshold based on query length
-      const maxErrors = Math.max(1, Math.floor(normalizedQuery.length / 4));
-
-      // Check words in title
-      const titleWords = normTitle.split(/\s+/);
-      if (titleWords.some(w => Math.abs(w.length - normalizedQuery.length) <= 2 && getLevenshteinDistance(normalizedQuery, w) <= maxErrors)) return true;
-      
-      // Check words in author
-      const authorWords = normAuthor.split(/\s+/);
-      if (authorWords.some(w => Math.abs(w.length - normalizedQuery.length) <= 2 && getLevenshteinDistance(normalizedQuery, w) <= maxErrors)) return true;
-
-      // Check full string if lengths are close
-      if (Math.abs(normTitle.length - normalizedQuery.length) <= 3) {
-         if (getLevenshteinDistance(normalizedQuery, normTitle) <= maxErrors + 1) return true;
+    rawTokens.forEach(token => {
+      if (token === '&') {
+        isAndOperation = true;
+        return;
       }
 
-      return false;
+      if (token.startsWith('#')) {
+        const kw = normalizeForSearch(token.substring(1));
+        if (!kw) return;
+
+        if (isAndOperation) {
+          // AND operation: append to current group
+          currentGroup.push(kw);
+          isAndOperation = false;
+        } else {
+          // OR operation (default space): start new group
+          if (currentGroup.length > 0) {
+            keywordGroups.push(currentGroup);
+          }
+          currentGroup = [kw];
+        }
+      } else {
+        textParts.push(token);
+        isAndOperation = false;
+      }
     });
+
+    if (currentGroup.length > 0) {
+      keywordGroups.push(currentGroup);
+    }
+
+    const textQuery = textParts.join(' ');
+
+    // 1. Filter by Keywords first
+    let filtered = songs;
+    if (keywordGroups.length > 0) {
+      filtered = filtered.filter(s => {
+        if (!s.keywords) return false;
+        const sKeywords = s.keywords.map(k => normalizeForSearch(k));
+        
+        // Match if ANY group matches (OR logic between groups)
+        return keywordGroups.some(group => {
+          // A group matches if ALL its keywords are present (AND logic within group)
+          return group.every(requiredKw => sKeywords.includes(requiredKw));
+        });
+      });
+    }
+
+    // 2. Filter by Text (if exists)
+    if (textQuery) {
+      const pattern = getSearchPattern(textQuery);
+      const regex = new RegExp(pattern, 'i');
+
+      filtered = filtered.filter(s => {
+        return regex.test(s.title) || regex.test(s.authors);
+    });
+    }
 
     const dir = sortDirection === 'asc' ? 1 : -1;
 
@@ -148,7 +150,14 @@ export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrd
       case 'alphabetic':
         return [...filtered].sort((a, b) => a.title.localeCompare(b.title) * dir);
       case 'relevance':
-      default:
+      default: {
+        if (!textQuery) {
+           return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+        }
+
+        const pattern = getSearchPattern(textQuery);
+        const regex = new RegExp(pattern, 'i');
+
         const sorted = [...filtered].sort((a, b) => {
           const aRegex = regex.test(a.title) || regex.test(a.authors);
           const bRegex = regex.test(b.title) || regex.test(b.authors);
@@ -174,6 +183,7 @@ export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrd
           return sorted.reverse();
         }
         return sorted;
+      }
     }
   }, [songs, query, sortOrder, sortDirection]);
 };

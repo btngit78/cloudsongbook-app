@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Song } from '../types';
 import { useSearchRegex } from '../hooks/useSongSearch';
 
@@ -42,10 +42,15 @@ export const SongList: React.FC<SongListProps> = ({
     );
   }
 
-  const highlightRegex = useSearchRegex(searchQuery);
+  const textSearchQuery = useMemo(() => 
+    searchQuery.split(/\s+/).filter(p => p && !p.startsWith('#')).join(' ')
+  , [searchQuery]);
+
+  const highlightRegex = useSearchRegex(textSearchQuery);
 
   const highlightMatch = (text: string) => {
-    if (!highlightSearch || !highlightRegex || !text) {
+    // Only highlight if there's a text query, not just keywords
+    if (!highlightSearch || !highlightRegex || !text || !textSearchQuery) {
       return text;
     }
 

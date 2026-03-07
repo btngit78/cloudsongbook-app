@@ -136,13 +136,18 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
   const renderContent = (body: string) => {
     const blocks = body.split(/\n\s*\n/);
     let chorusCount = 0;
+    let isGlobalChorus = false;
     
     return blocks.map((block, bIdx) => {
       const lines = block.split('\n');
       const startsWithChorusLabel = lines[0].toLowerCase().trim().startsWith('chorus') || 
                                     lines[0].toLowerCase().trim().startsWith('{soc}');
       
-      let inChorusSection = startsWithChorusLabel;
+      if (startsWithChorusLabel) {
+        isGlobalChorus = true;
+      }
+
+      let inChorusSection = isGlobalChorus;
       let mbClass = 'mb-2';
       
       const sectionId = startsWithChorusLabel ? `chorus-${chorusCount++}` : undefined;
@@ -183,6 +188,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
             const trimmed = line.trim().toLowerCase();
             if (trimmed === '{eoc}') {
               inChorusSection = false;
+              isGlobalChorus = false;
               return null;
             }
            
@@ -217,11 +223,25 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
     >
       {song.isPdf && song.pdfUrl ? (
         <div className="w-full h-[80vh]">
-          <iframe 
-            src={`${song.pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+          <object 
+            data={`${song.pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+            type="application/pdf"
             className="w-full h-full rounded-3xl"
-            title={song.title}
-          ></iframe>
+          >
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-gray-50 dark:bg-gray-800 rounded-3xl">
+              <p className="mb-4 text-gray-600 dark:text-gray-300 font-medium">
+                Unable to display PDF directly.
+              </p>
+              <a 
+                href={song.pdfUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg"
+              >
+                Open PDF
+              </a>
+            </div>
+          </object>
         </div>
       ) : (
         <div className="leading-tight select-text font-mono text-gray-900 dark:text-gray-100">
