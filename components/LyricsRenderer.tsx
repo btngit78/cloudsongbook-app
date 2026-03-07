@@ -140,16 +140,21 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
     
     return blocks.map((block, bIdx) => {
       const lines = block.split('\n');
-      const startsWithChorusLabel = lines[0].toLowerCase().trim().startsWith('chorus') || 
-                                    lines[0].toLowerCase().trim().startsWith('{soc}');
+      const firstLineTrimmed = lines[0].toLowerCase().trim();
+      const isSocMarker = firstLineTrimmed.startsWith('{soc}');
+      const isChorusKeyword = firstLineTrimmed.startsWith('chorus');
       
-      if (startsWithChorusLabel) {
+      // Only {soc} sets the global state that persists across blocks
+      if (isSocMarker) {
         isGlobalChorus = true;
       }
 
-      let inChorusSection = isGlobalChorus;
+      // A block is part of a chorus if we're in a global {soc} section,
+      // OR if the block itself starts with "Chorus:"
+      let inChorusSection = isGlobalChorus || isChorusKeyword;
       let mbClass = 'mb-2';
       
+      const startsWithChorusLabel = isSocMarker || isChorusKeyword;
       const sectionId = startsWithChorusLabel ? `chorus-${chorusCount++}` : undefined;
 
       return (

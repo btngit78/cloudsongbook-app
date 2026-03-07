@@ -108,6 +108,13 @@ const App: React.FC = () => {
   const [isRouteHandled, setIsRouteHandled] = useState(false);
   const [localShowChords, setLocalShowChords] = useState(user?.settings.showChords ?? true);
   const transposeHandledRef = useRef<string>('');
+  
+  // Create Setlist from Search State
+  const [showCreateSetlistModal, setShowCreateSetlistModal] = useState(false);
+  const [songsForSetlist, setSongsForSetlist] = useState<Song[]>([]);
+  const [newSetlistName, setNewSetlistName] = useState('');
+  const [editSetlistImmediately, setEditSetlistImmediately] = useState(true);
+  const [targetSetlistId, setTargetSetlistId] = useState<string | null>(null);
 
   const recentSongs = useMemo(() => {
     return [...allSongs]
@@ -408,6 +415,45 @@ const App: React.FC = () => {
     setMenuOpen(false);
   };
 
+  const closeCreateSetlistModal = () => {
+    setShowCreateSetlistModal(false);
+    setSongsForSetlist([]); // Clear the temporary songs
+    setNewSetlistName('');
+    setEditSetlistImmediately(true); // Reset to default
+  };
+
+  const handleCreateSetlistFromSearch = async () => {
+    if (!newSetlistName.trim() || !user) return;
+
+    const newId = Date.now().toString();
+    const newSetlist: SetList = {
+      id: newId,
+      name: newSetlistName,
+      choices: songsForSetlist.map(s => ({
+        songId: s.id,
+        key: s.key,
+        tempo: s.tempo,
+        style: '',
+        singer: ''
+      })),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ownerId: user.id,
+      lastUsedAt: 0
+    };
+
+    await saveSetlist(newSetlist);
+    
+    closeCreateSetlistModal();
+    
+    if (editSetlistImmediately) {
+      setTargetSetlistId(newId);
+      setView('SETLIST_MANAGER');
+    } else {
+      setTargetSetlistId(null);
+    } 
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4">
@@ -653,6 +699,22 @@ const App: React.FC = () => {
                 Alphabetic
                 {sortOrder === 'alphabetic' && <i className={`fa-solid ${sortDirection === 'asc' ? 'fa-arrow-down-a-z' : 'fa-arrow-down-z-a'}`}></i>}
               </button>
+              
+              {/* Create Setlist from Search Button (Admin/Premium only) */}
+              {(user.role === UserRole.ADMIN || user.role === UserRole.PREMIUM) && filteredSongs.length > 0 && (
+                <button 
+                  onClick={() => {
+                    setSongsForSetlist(filteredSongs);
+                    setNewSetlistName(`Search Results - ${new Date().toLocaleDateString()}`);
+                    setShowCreateSetlistModal(true);
+                  }}
+                  className="ml-2 flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700 hover:bg-green-200 dark:hover:bg-green-800/50 transition-colors"
+                  title="Create Setlist from these results"
+                >
+                  <i className="fa-solid fa-file-circle-plus"></i>
+                  <span>Make Setlist</span>
+                </button>
+              )}
             </div>
             <SongList 
               songs={filteredSongs} 
@@ -719,8 +781,12 @@ const App: React.FC = () => {
             onSave={saveSetlist}
             onDelete={deleteSetlist}
             onPlay={handlePlaySetlist}
-            onClose={() => setView('SONG_VIEW')}
+            onClose={() => {
+              setView('SONG_VIEW');
+              setTargetSetlistId(null);
+            }}
             onDirtyChange={setHasUnsavedChanges}
+            initialEditingId={targetSetlistId}
           />
         )}
         {view === 'SETTINGS' && (
@@ -880,6 +946,57 @@ const App: React.FC = () => {
         <OfflineReadyToast onDismiss={() => setOfflineReady(false)} />
       )}
       </div>
+
+      {/* Create Setlist Modal */}
+      {showCreateSetlistModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Create Setlist from Search</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Create a new setlist containing all {songsForSetlist.length} songs from your current search results.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Setlist Name</label>
+                <input 
+                  value={newSetlistName}
+                  onChange={e => setNewSetlistName(e.target.value)}
+                  placeholder="e.g., Sunday Service"
+                  className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all"
+                  autoFocus
+                />
+              </div>
+              
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={editSetlistImmediately}
+                  onChange={e => setEditSetlistImmediately(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Open in Setlist Editor immediately</span>
+              </label>
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3">
+              <button 
+                onClick={closeCreateSetlistModal}
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleCreateSetlistFromSearch}
+                disabled={!newSetlistName.trim()}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create Setlist
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

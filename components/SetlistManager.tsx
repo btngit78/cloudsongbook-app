@@ -14,6 +14,7 @@ interface SetlistManagerProps {
   onPlay: (setlist: SetList) => void;
   onClose: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
+  initialEditingId?: string | null;
 }
 
 const getFriendlyDuration = (start: number, end: number) => {
@@ -36,9 +37,9 @@ const getFriendlyDuration = (start: number, end: number) => {
 type SortKey = 'name' | 'updatedAt' | 'lastUsedAt';
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  user, setlists, allSongs, currentSong, onSave, onDelete, onPlay, onClose, onDirtyChange 
+  user, setlists, allSongs, currentSong, onSave, onDelete, onPlay, onClose, onDirtyChange, initialEditingId
 }) => {
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(initialEditingId || null);
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
