@@ -517,9 +517,11 @@ const App: React.FC = () => {
   };
 
   const handlePlaySetlist = async (setlist: SetList) => {
+    dbService.addToRecentSetlistsCache(setlist);
     await playSetlist(setlist);
     setView('SONG_VIEW');
     setMenuOpen(false);
+    setShowRecentlyPlayedSetlistsSubMenu(false);
   };
 
   const closeCreateSetlistModal = () => {
@@ -942,6 +944,26 @@ const App: React.FC = () => {
 
             <nav className="p-4 space-y-1">
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Song Management</p>
+              <button 
+                onClick={() => {
+                  setRecentlyViewed(dbService.getRecentCache().slice(0, 20));
+                  setShowRecentlyViewedSubMenu(true);
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <i className="fa-solid fa-eye w-6"></i>
+                  <span className="font-medium">Recently Viewed</span>
+                </div>
+                <i className="fa-solid fa-chevron-right text-gray-400"></i>
+              </button>
+              <button 
+                onClick={() => handleNavigation('RECENT_SONGS')}
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                <i className="fa-solid fa-clock-rotate-left w-6"></i>
+                <span className="font-medium">Recent 50 Additions</span>
+              </button>
               {/* "Add New Song" for Admin and Premium */}
               {(user.role === UserRole.ADMIN || user.role === UserRole.PREMIUM) && (
                 <button 
@@ -980,21 +1002,12 @@ const App: React.FC = () => {
               <div className="my-4 border-t border-gray-100 dark:border-gray-700" />
               
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Playlists</p>
-              {activeSetlist && (
-                <button 
-                  onClick={() => { exitSetlist(); setMenuOpen(false); }} // Exit setlist doesn't change view, just state
-                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors mb-2"
-                >
-                  <i className="fa-solid fa-circle-stop w-6"></i>
-                  <span className="font-medium">Exit Current Set</span>
-                </button>
-              )}
               <button 
                 onClick={() => handleNavigation('SETLIST_MANAGER')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
                 <i className="fa-solid fa-list-ul w-6"></i>
-                <span className="font-medium">Set Lists</span>
+                <span className="font-medium">All Setlists</span>
               </button>
               <button 
                 onClick={() => {
@@ -1009,33 +1022,22 @@ const App: React.FC = () => {
                 </div>
                 <i className="fa-solid fa-chevron-right text-gray-400"></i>
               </button>
-              <button 
-                onClick={() => {
-                  setRecentlyViewed(dbService.getRecentCache().slice(0, 20));
-                  setShowRecentlyViewedSubMenu(true);
-                }}
-                className="w-full flex items-center justify-between px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
-              >
-                <div className="flex items-center space-x-3">
-                  <i className="fa-solid fa-eye w-6"></i>
-                  <span className="font-medium">Recently Viewed</span>
-                </div>
-                <i className="fa-solid fa-chevron-right text-gray-400"></i>
-              </button>
-              <button 
-                onClick={() => handleNavigation('RECENT_SONGS')}
-                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
-              >
-                <i className="fa-solid fa-clock-rotate-left w-6"></i>
-                <span className="font-medium">Recent 50 Additions</span>
-              </button>
+              {activeSetlist && (
+                <button 
+                  onClick={() => { exitSetlist(); setMenuOpen(false); }} // Exit setlist doesn't change view, just state
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                >
+                  <i className="fa-solid fa-circle-stop w-6"></i>
+                  <span className="font-medium">Exit Current Set</span>
+                </button>
+              )}
 
               <div className="my-4 border-t border-gray-100 dark:border-gray-700" />
 
               {user.role === UserRole.ADMIN && (
                 <button 
                   onClick={() => handleNavigation('ADMIN_DASHBOARD')}
-                  className="w-full flex items-center space-x-3 px-4 py-3 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-xl transition-colors mb-2"
+                  className="w-full flex items-center space-x-3 px-4 py-3 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-xl transition-colors"
                 >
                   <i className="fa-solid fa-users-gear w-6"></i>
                   <span className="font-medium">Admin Dashboard</span>
