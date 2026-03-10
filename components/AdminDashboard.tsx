@@ -1,16 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { dbService } from '../services/dbService';
+import { storageService } from '../services/storageService';
 
 interface AdminDashboardProps {
   currentUser: User;
   onBack: () => void;
 }
 
+interface StorageFile {
+  path: string;
+  size: number;
+  url: string;
+  songId: string;
+  name: string;
+}
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   // State for deletion modal
+  const [activeTab, setActiveTab] = useState<'users' | 'storage'>('users');
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -24,6 +34,59 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
     };
     loadUsers();
   }, []);
+
+  const [storageFiles, setStorageFiles] = useState<StorageFile[]>([]);
+  const [totalStorageSize, setTotalStorageSize] = useState(0);
+  const [loadingStorage, setLoadingStorage] = useState(false);
+
+  const loadStorageDetails = async () => {
+    setLoadingStorage(true);
+    try {
+      const { totalSize, files } = await storageService.getStorageUsageDetails();
+      setTotalStorageSize(totalSize);
+      setStorageFiles(files);
+    } catch (error) {
+      console.error("Failed to load storage details", error);
+      alert("Failed to load storage details. See console for more info.");
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  // Load storage details when tab is switched for the first time
+  useEffect(() => {
+    if (activeTab === 'storage' && storageFiles.length === 0) {
+      loadStorageDetails();
+    }
+  }, [activeTab]);
+
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  const handleDeleteFile = async (filePath: string, fileName: string, fileSize: number) => {
+    if (!window.confirm(`Are you sure you want to delete the file "${fileName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setLoadingStorage(true); // Indicate loading while deleting
+    try {
+      await storageService.deleteFileByPath(filePath);
+      setStorageFiles(prevFiles => prevFiles.filter(file => file.path !== filePath));
+      setTotalStorageSize(prevSize => prevSize - fileSize);
+      alert(`File "${fileName}" deleted successfully.`);
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      alert(`Failed to delete file "${fileName}". Please try again.`);
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     if (userId === currentUser.id) return;
@@ -78,72 +141,149 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
         </button>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500 dark:text-gray-400">Loading users...</p>
-        </div>
-      ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-64">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold mr-3">
-                          {user.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {user.email}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                        ${user.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 
-                          user.role === UserRole.PREMIUM ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 
-                          'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      <div className="flex items-center space-x-2">
-                        <select
-                          aria-label="User Role"
-                          value={user.role}
-                          onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
-                          disabled={user.id === currentUser.id}
-                          className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
-                        >
-                          <option value={UserRole.FREE}>FREE</option>
-                          <option value={UserRole.PREMIUM}>PREMIUM</option>
-                          <option value={UserRole.ADMIN}>ADMIN</option>
-                        </select>
-                        <button
-                          onClick={() => setUserToDelete(user)}
-                          disabled={user.id === currentUser.id || user.role === UserRole.ADMIN}
-                          className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Delete User"
-                        >
-                          <i className="fa-solid fa-trash"></i>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'users' ? 'border-blue-500 text-blue-600 dark:text-blue-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
+          >
+            User Management
+          </button>
+          <button
+            onClick={() => setActiveTab('storage')}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'storage' ? 'border-blue-500 text-blue-600 dark:text-blue-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
+          >
+            Storage Management
+          </button>
+        </nav>
+      </div>
+
+      {activeTab === 'users' && (
+        loading ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500 dark:text-gray-400">Loading users...</p>
           </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Role</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-64">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {users.map((user) => (
+                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold mr-3">
+                            {user.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {user.email}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                          ${user.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 
+                            user.role === UserRole.PREMIUM ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 
+                            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        <div className="flex items-center space-x-2">
+                          <select
+                            aria-label="User Role"
+                            value={user.role}
+                            onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
+                            disabled={user.id === currentUser.id}
+                            className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
+                          >
+                            <option value={UserRole.FREE}>FREE</option>
+                            <option value={UserRole.PREMIUM}>PREMIUM</option>
+                            <option value={UserRole.ADMIN}>ADMIN</option>
+                          </select>
+                          <button
+                            onClick={() => setUserToDelete(user)}
+                            disabled={user.id === currentUser.id || user.role === UserRole.ADMIN}
+                            className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Delete User"
+                          >
+                            <i className="fa-solid fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      )}
+
+      {activeTab === 'storage' && (
+        <div>
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div>
+              <h3 className="font-bold text-gray-800 dark:text-gray-200">Total Storage Used</h3>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{loadingStorage ? '...' : formatBytes(totalStorageSize)}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{loadingStorage ? '...' : `${storageFiles.length} files`}</p>
+            </div>
+            <button onClick={loadStorageDetails} disabled={loadingStorage} className="px-4 py-2 text-sm font-bold text-blue-600 dark:text-blue-300 border border-blue-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-wait transition-colors">
+              {loadingStorage ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+
+          {loadingStorage ? (
+            <div className="text-center py-12"><p className="text-gray-500 dark:text-gray-400">Loading storage details...</p></div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">File Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Song ID</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Size</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Link</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {storageFiles.map((file) => (
+                      <tr key={file.path} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">{file.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{file.songId}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{formatBytes(file.size)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                          <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-200">
+                            Open
+                          </a>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                          <button
+                            onClick={() => handleDeleteFile(file.path, file.name, file.size)}
+                            className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                            title="Delete File"
+                          >
+                            <i className="fa-solid fa-trash"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

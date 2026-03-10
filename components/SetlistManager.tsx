@@ -254,7 +254,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                           {(user?.role === UserRole.ADMIN || setlist.ownerId === user?.id) && (
                             <>
                               <button onClick={() => startEdit(setlist)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50"><i className="fa-solid fa-pen"></i></button>
-                              <button onClick={() => { if(window.confirm('Delete this setlist?')) onDelete(setlist.id); }} title="Delete" className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50"><i className="fa-solid fa-trash"></i></button>
+                              <button onClick={() => onDelete(setlist.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50"><i className="fa-solid fa-trash"></i></button>
                             </>
                           )}
                           <button onClick={() => handleDuplicate(setlist)} title="Duplicate" className="p-1.5 text-gray-400 hover:text-green-600 rounded-md hover:bg-green-50"><i className="fa-solid fa-copy"></i></button>

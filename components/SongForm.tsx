@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Song } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
 import { PdfUploader } from './PdfUploader';
+import { storageService } from '../services/storageService';
 
 interface SongFormProps {
   song?: Song;
@@ -106,9 +107,19 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     onSave(formData);
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (isDirty) {
       if (window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+        // Check if a new PDF was uploaded and is different from the initial one
+        const newPdfUploaded = formData.isPdf && formData.pdfUrl && formData.pdfUrl !== initialData.pdfUrl;
+        if (newPdfUploaded) {
+          try {
+            await storageService.deleteSongPdf(formData.pdfUrl!);
+          } catch (error) {
+            console.error("Failed to delete orphaned PDF:", error);
+            // Non-critical error, proceed with cancellation.
+          }
+        }
         onCancel();
       }
     } else {

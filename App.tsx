@@ -5,6 +5,7 @@ import { SetList } from './types';
 import { MOCK_USER, MOCK_SONGS } from './constants';
 import { dbService } from './services/dbService';
 import { geminiService } from './services/geminiService';
+import { storageService } from './services/storageService';
 import SongViewer from './components/SongViewer';
 import SongForm from './components/SongForm';
 import SettingsView from './components/SettingsView';
@@ -105,6 +106,10 @@ const App: React.FC = () => {
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showRecentlyViewedSubMenu, setShowRecentlyViewedSubMenu] = useState(false);
+  const [showRecentlyPlayedSetlistsSubMenu, setShowRecentlyPlayedSetlistsSubMenu] = useState(false);
+  const [recentlyViewed, setRecentlyViewed] = useState<Song[]>([]);
+  const [recentlyPlayedSetlists, setRecentlyPlayedSetlists] = useState<SetList[]>([]);
   const [isRouteHandled, setIsRouteHandled] = useState(false);
   const [localShowChords, setLocalShowChords] = useState(user?.settings.showChords ?? true);
   const transposeHandledRef = useRef<string>('');
@@ -154,6 +159,13 @@ const App: React.FC = () => {
     navigateSetlist,
     exitSetlist
   } = useSetlists(user, handleSelectSong);
+
+  // Add active setlist to recently played cache whenever it changes
+  useEffect(() => {
+    if (activeSetlist) {
+      dbService.addToRecentSetlistsCache(activeSetlist);
+    }
+  }, [activeSetlist]);
 
   // --- URL Routing & Deep Linking ---
   
@@ -268,6 +280,8 @@ const App: React.FC = () => {
     if (callback) callback();
     setView(targetView);
     setMenuOpen(false);
+    setShowRecentlyViewedSubMenu(false);
+    setShowRecentlyPlayedSetlistsSubMenu(false);
   };
 
   // Reset selection when search query changes
@@ -287,8 +301,10 @@ const App: React.FC = () => {
         }
       }
     } else {
-      handleSelectSong(songId);
+      await handleSelectSong(songId);
     }
+    setMenuOpen(false);
+    setShowRecentlyViewedSubMenu(false);
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -402,11 +418,102 @@ const App: React.FC = () => {
     setView('SONG_VIEW');
   };
 
-  const handleDeleteSong = async () => {
-    const deleted = await deleteSong();
-    if (deleted) {
-      setView('SONG_VIEW');
+  const handleDeleteSetlist = async (setlistId: string) => {
+    const setlistToDelete = setlists.find(s => s.id === setlistId);
+    if (!setlistToDelete) return;
+
+    let confirmMessage = `Are you sure you want to delete the setlist "${setlistToDelete.name}"?`;
+
+    if (activeSetlist && activeSetlist.id === setlistId) {
+      confirmMessage += `\n\nWARNING: This is the currently active setlist. Deleting it will exit the current session.`;
     }
+
+    if (window.confirm(confirmMessage)) {
+      if (activeSetlist && activeSetlist.id === setlistId) {
+        exitSetlist();
+      }
+      await deleteSetlist(setlistId);
+    }
+  };
+
+  const performDeleteSong = async (songToDelete: Song) => {
+    if (!songToDelete) return;
+
+    const setlistsContainingSong = setlists.filter(setlist =>
+      setlist.choices.some(choice => choice.songId === songToDelete.id)
+    );
+
+    let confirmMessage = `Are you sure you want to permanently delete the song "${songToDelete.title}"?`;
+
+    if (setlistsContainingSong.length > 0) {
+      const setlistNames = setlistsContainingSong.map(s => `"${s.name}"`).join(', ');
+      confirmMessage += `\n\nThis song is used in ${setlistsContainingSong.length} setlist(s) and will be removed from them:\n${setlistNames}`;
+      
+      if (activeSetlist && setlistsContainingSong.some(s => s.id === activeSetlist.id)) {
+        confirmMessage += `\n\nWARNING: This includes the currently active setlist.`;
+      }
+    }
+
+    if (window.confirm(confirmMessage)) {
+      const wasInActiveSetlist = activeSetlist && setlistsContainingSong.some(s => s.id === activeSetlist.id);
+      let deletedSongIndexInActiveSetlist = -1;
+      if (wasInActiveSetlist) {
+        deletedSongIndexInActiveSetlist = activeSetlist!.choices.findIndex(c => c.songId === songToDelete.id);
+      }
+
+      const deleted = await deleteSpecificSong(songToDelete);
+
+      if (deleted) {
+        // If the song was a PDF, also delete its file from storage.
+        if (songToDelete.isPdf && songToDelete.pdfUrl) {
+          try {
+            await storageService.deleteSongPdf(songToDelete.pdfUrl);
+            console.log(`Successfully deleted PDF for song: ${songToDelete.title}`);
+          } catch (error) {
+            console.error(`Failed to delete PDF from storage for song ${songToDelete.id}:`, error);
+            // Non-critical, but good to know. The DB record is gone.
+            alert(`The song was deleted, but an error occurred while removing its PDF file from storage. It may need to be removed manually.`);
+          }
+        }
+
+        const updatePromises = setlistsContainingSong.map(setlist => {
+          const newChoices = setlist.choices.filter(choice => choice.songId !== songToDelete.id);
+          return saveSetlist({ ...setlist, choices: newChoices });
+        });
+        await Promise.all(updatePromises);
+
+        // If the deleted song was in the active setlist, we need to refresh the view.
+        if (wasInActiveSetlist && deletedSongIndexInActiveSetlist !== -1) {
+          const updatedActiveSetlist = {
+            ...activeSetlist!,
+            choices: activeSetlist!.choices.filter(c => c.songId !== songToDelete.id)
+          };
+
+          if (updatedActiveSetlist.choices.length === 0) {
+            exitSetlist();
+          } else {
+            let newIndex = activeSetlistIndex;
+            if (activeSetlistIndex === deletedSongIndexInActiveSetlist) { // Deleted the current song
+              if (newIndex >= updatedActiveSetlist.choices.length) { // If it was the last one
+                newIndex = updatedActiveSetlist.choices.length - 1;
+              }
+            } else if (deletedSongIndexInActiveSetlist < activeSetlistIndex) { // Deleted a song before the current one
+              newIndex--;
+            }
+            await playSetlist(updatedActiveSetlist, newIndex);
+          }
+        }
+
+        if (view === 'SONG_FORM' && songToEdit?.id === songToDelete.id) {
+            setView('SONG_VIEW');
+            setSongToEdit(undefined);
+        }
+      }
+    }
+  };
+
+  const handleDeleteSong = async () => {
+    if (currentSong) await performDeleteSong(currentSong);
   };
 
   const handlePlaySetlist = async (setlist: SetList) => {
@@ -768,7 +875,7 @@ const App: React.FC = () => {
               setSongToEdit(song);
               setView('SONG_FORM');
             }}
-            onDeleteSong={deleteSpecificSong}
+            onDeleteSong={performDeleteSong}
             onBack={() => setView('SONG_VIEW')}
           />
         )}
@@ -779,7 +886,7 @@ const App: React.FC = () => {
             allSongs={allSongs}
             currentSong={currentSong ?? undefined}
             onSave={saveSetlist}
-            onDelete={deleteSetlist}
+            onDelete={handleDeleteSetlist}
             onPlay={handlePlaySetlist}
             onClose={() => {
               setView('SONG_VIEW');
@@ -812,11 +919,17 @@ const App: React.FC = () => {
       {/* Burger Menu Sidebar */}
       {menuOpen && (
         <>
-          <div 
+          <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity"
-            onClick={() => setMenuOpen(false)}
+            onClick={() => {
+              setMenuOpen(false);
+              setShowRecentlyViewedSubMenu(false);
+              setShowRecentlyPlayedSetlistsSubMenu(false);
+            }}
           ></div>
-          <aside className="fixed inset-y-0 left-0 w-80 bg-white dark:bg-gray-800 z-50 shadow-2xl transform transition-transform animate-slideInLeft overflow-y-auto">
+          <div className="fixed inset-y-0 left-0 w-80 z-50 overflow-hidden">
+            {/* Main Menu Panel */}
+            <aside className={`absolute inset-y-0 left-0 w-80 bg-white dark:bg-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out overflow-y-auto ${(showRecentlyViewedSubMenu || showRecentlyPlayedSetlistsSubMenu) ? '-translate-x-full' : 'translate-x-0'}`}>
             <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center space-x-4">
               <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 text-xl font-bold">
                 {user.name.charAt(0)}
@@ -884,6 +997,32 @@ const App: React.FC = () => {
                 <span className="font-medium">Set Lists</span>
               </button>
               <button 
+                onClick={() => {
+                  setRecentlyPlayedSetlists(dbService.getRecentSetlistsCache());
+                  setShowRecentlyPlayedSetlistsSubMenu(true);
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <i className="fa-solid fa-history w-6"></i>
+                  <span className="font-medium">Recently Played</span>
+                </div>
+                <i className="fa-solid fa-chevron-right text-gray-400"></i>
+              </button>
+              <button 
+                onClick={() => {
+                  setRecentlyViewed(dbService.getRecentCache().slice(0, 20));
+                  setShowRecentlyViewedSubMenu(true);
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <i className="fa-solid fa-eye w-6"></i>
+                  <span className="font-medium">Recently Viewed</span>
+                </div>
+                <i className="fa-solid fa-chevron-right text-gray-400"></i>
+              </button>
+              <button 
                 onClick={() => handleNavigation('RECENT_SONGS')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
@@ -929,7 +1068,66 @@ const App: React.FC = () => {
                 <span className="font-medium">Logout</span>
               </button>
             </nav>
-          </aside>
+            </aside>
+
+            {/* Recently Viewed Sub-Menu Panel */}
+            <div className={`absolute inset-y-0 left-0 w-80 bg-white dark:bg-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out ${showRecentlyViewedSubMenu ? 'translate-x-0' : 'translate-x-full'}`}>
+              <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                <button 
+                  onClick={() => setShowRecentlyViewedSubMenu(false)}
+                  className="w-full flex items-center space-x-3 px-2 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <i className="fa-solid fa-chevron-left w-6"></i>
+                  <span className="font-bold">Recently Viewed</span>
+                </button>
+              </div>
+              <div className="overflow-y-auto h-full pb-12">
+                {recentlyViewed.length > 0 ? recentlyViewed.map(song => (
+                  <button 
+                    key={song.id}
+                    onClick={() => handleUserSongSelect(song.id)}
+                    className="w-full text-left flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <div className="truncate">
+                      <p className="font-medium truncate">{song.title}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{song.authors}</p>
+                    </div>
+                  </button>
+                )) : (
+                  <p className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No recently viewed songs.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Recently Played Setlists Sub-Menu Panel */}
+            <div className={`absolute inset-y-0 left-0 w-80 bg-white dark:bg-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out ${showRecentlyPlayedSetlistsSubMenu ? 'translate-x-0' : 'translate-x-full'}`}>
+              <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                <button 
+                  onClick={() => setShowRecentlyPlayedSetlistsSubMenu(false)}
+                  className="w-full flex items-center space-x-3 px-2 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <i className="fa-solid fa-chevron-left w-6"></i>
+                  <span className="font-bold">Recently Played</span>
+                </button>
+              </div>
+              <div className="overflow-y-auto h-full pb-12">
+                {recentlyPlayedSetlists.length > 0 ? recentlyPlayedSetlists.map(setlist => (
+                  <button 
+                    key={setlist.id}
+                    onClick={() => handlePlaySetlist(setlist)}
+                    className="w-full text-left flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <div className="truncate">
+                      <p className="font-medium truncate">{setlist.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{setlist.choices.length} songs</p>
+                    </div>
+                  </button>
+                )) : (
+                  <p className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No recently played setlists.</p>
+                )}
+              </div>
+            </div>
+          </div>
         </>
       )}
 

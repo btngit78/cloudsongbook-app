@@ -9,6 +9,7 @@ const SONGS_COLLECTION = 'songs';
 const USERS_COLLECTION = 'users';
 const SETLISTS_COLLECTION = 'setlists';
 const CACHE_KEY = 'cloudsong_recent_songs';
+const RECENT_SETLISTS_CACHE_KEY = 'cloudsong_recent_setlists';
 
 export const dbService = {
   // --- Songs ---
@@ -166,6 +167,25 @@ export const dbService = {
     const filtered = current.filter(s => s.id !== song.id);
     const updated = [song, ...filtered].slice(0, 40); // Limit 40
     localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
+  },
+
+  clearRecentCache() {
+    localStorage.removeItem(CACHE_KEY);
+  },
+
+  // --- Local Cache (LRU) for Setlists ---
+  getRecentSetlistsCache(): SetList[] {
+    const stored = localStorage.getItem(RECENT_SETLISTS_CACHE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  },
+
+  addToRecentSetlistsCache(setlist: SetList) {
+    const current = this.getRecentSetlistsCache();
+    // Remove if it already exists to move it to the front
+    const filtered = current.filter(s => s.id !== setlist.id);
+    // Add to the front and limit to 10
+    const updated = [setlist, ...filtered].slice(0, 10);
+    localStorage.setItem(RECENT_SETLISTS_CACHE_KEY, JSON.stringify(updated));
   },
 
 

@@ -72,14 +72,13 @@ export const useSongs = () => {
   };
 
   const deleteSpecificSong = async (song: Song) => {
-    if (window.confirm(`Delete "${song.title}"?`)) {
       await dbService.deleteSong(song.id);
       const songs = await dbService.getSongs();
       setAllSongs(songs);
       if (currentSong?.id === song.id) {
         setCurrentSong(songs[0] || null);
       }
-    }
+      return true;
   };
 
   return {
