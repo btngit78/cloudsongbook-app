@@ -88,14 +88,23 @@ export const dbService = {
   async syncUser(user: User): Promise<User> {
     const userRef = doc(db, USERS_COLLECTION, user.id);
     const userSnap = await getDoc(userRef);
+    const now = Date.now();
 
     if (userSnap.exists()) {
-      // Return existing user data (preserves settings from DB)
-      return { id: userSnap.id, ...userSnap.data() } as User;
+      // User exists. Update last login and return merged data.
+      const existingData = { id: userSnap.id, ...userSnap.data() } as User;
+      const updatedUser = { ...existingData, lastLoginAt: now };
+      await setDoc(userRef, { lastLoginAt: now }, { merge: true });
+      return updatedUser;
     } else {
-      // Create new user in DB
-      await setDoc(userRef, user);
-      return user;
+      // Create new user in DB with timestamps.
+      const newUser = {
+        ...user,
+        createdAt: now,
+        lastLoginAt: now,
+      };
+      await setDoc(userRef, newUser);
+      return newUser;
     }
   },
 

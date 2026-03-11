@@ -12,6 +12,8 @@ export interface User {
   role: UserRole;
   profileImage?: string;
   settings: UserSettings;
+  createdAt?: number;
+  lastLoginAt?: number;
 }
 
 export interface UserSettings {

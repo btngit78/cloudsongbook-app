@@ -15,6 +15,7 @@ interface SetlistManagerProps {
   onClose: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   initialEditingId?: string | null;
+  initialSearchQuery?: string;
 }
 
 const getFriendlyDuration = (start: number, end: number) => {
@@ -37,13 +38,13 @@ const getFriendlyDuration = (start: number, end: number) => {
 type SortKey = 'name' | 'updatedAt' | 'lastUsedAt';
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  user, setlists, allSongs, currentSong, onSave, onDelete, onPlay, onClose, onDirtyChange, initialEditingId
+  user, setlists, allSongs, currentSong, onSave, onDelete, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = ''
 }) => {
   const [editingId, setEditingId] = useState<string | null>(initialEditingId || null);
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
 
   // Fetch owner names for setlists
   useEffect(() => {
@@ -135,13 +136,20 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
 
   const isPremium = user?.role === UserRole.PREMIUM;
   const filteredSetlists = useMemo(() => {
-    if (!searchQuery.trim()) {
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery) {
       return setlists;
     }
-    const pattern = getSearchPattern(searchQuery);
+
+    if (trimmedQuery.startsWith('#owner:')) {
+      const ownerId = trimmedQuery.replace('#owner:', '');
+      return setlists.filter(s => s.ownerId === ownerId);
+    }
+
+    const pattern = getSearchPattern(trimmedQuery);
     const regex = new RegExp(pattern, 'i');
-    return setlists.filter(s => regex.test(s.name));
-  }, [setlists, searchQuery]);
+    return setlists.filter(s => regex.test(s.name) || (ownerNames[s.ownerId] && regex.test(ownerNames[s.ownerId])));
+  }, [setlists, searchQuery, ownerNames]);
 
   if (editingId) {
     const setlistToEdit = setlists.find(s => s.id === editingId);

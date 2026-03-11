@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, UserRole, Song, SetList } from '../types';
 import { dbService } from '../services/dbService';
 import { storageService } from '../services/storageService';
 
 interface AdminDashboardProps {
   currentUser: User;
   onBack: () => void;
+  allSongs: Song[];
+  allSetlists: SetList[];
+  onNavigate: (query: string, type: 'songs' | 'setlists') => void;
 }
 
 interface StorageFile {
@@ -16,7 +19,7 @@ interface StorageFile {
   name: string;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, allSongs, allSetlists, onNavigate }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   // State for deletion modal
@@ -24,6 +27,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const userContentCounts = useMemo(() => {
+    const counts: Record<string, { songs: number, setlists: number }> = {};
+    if (!allSongs || !allSetlists) return counts;
+
+    for (const user of users) {
+        counts[user.id] = {
+            songs: allSongs.filter(s => s.ownerId === user.id).length,
+            setlists: allSetlists.filter(s => s.ownerId === user.id).length,
+        };
+    }
+    return counts;
+  }, [users, allSongs, allSetlists]);
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -171,8 +187,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Login</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-64">Actions</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Content</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-48">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -189,6 +208,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {user.email}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : '-'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                           ${user.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' : 
@@ -196,6 +221,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack }) 
                             'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
                           {user.role}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => onNavigate(`#owner:${user.id}`, 'songs')} className="font-medium text-blue-600 dark:text-blue-400 hover:underline" title="View user's songs">
+                            {userContentCounts[user.id]?.songs ?? 0}
+                          </button>
+                          <span className="text-gray-400 dark:text-gray-500">/</span>
+                          <button onClick={() => onNavigate(`#owner:${user.id}`, 'setlists')} className="font-medium text-blue-600 dark:text-blue-400 hover:underline" title="View user's setlists">
+                            {userContentCounts[user.id]?.setlists ?? 0}
+                          </button>
+                        </div>
+                        <div className="text-[10px] text-gray-400 dark:text-gray-500">
+                          Songs / Setlists
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         <div className="flex items-center space-x-2">
