@@ -27,7 +27,7 @@ interface UseNavigationReturn {
   setAdminSetlistFilter: (filter: string) => void;
   handleNavigation: (targetView: ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD', callback?: () => void) => void;
   handleAdminNavigate: (query: string, type: 'songs' | 'setlists') => void;
-}
+} // Ensure that the Song type is imported or defined correctly
 
 export const useNavigation = ({
   hasUnsavedChanges,
@@ -46,7 +46,7 @@ export const useNavigation = ({
   const [cameFromAdminSongSearch, setCameFromAdminSongSearch] = useState(false);
   const [adminSetlistFilter, setAdminSetlistFilter] = useState<string>('');
 
-  const handleNavigation = useCallback((targetView: typeof view, callback?: () => void) => {
+  const handleNavigation = useCallback((targetView: ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD', callback?: () => void) => {
     if (hasUnsavedChanges) {
       if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
         return;
@@ -62,10 +62,12 @@ export const useNavigation = ({
     setSearchQuery('');
     setIsHeaderSearchActive(false);
     setSelectedIndex(-1);
-    setSongToEdit(undefined); // Clear song to edit when navigating
+    if (targetView !== 'SONG_FORM') {
+      setSongToEdit(undefined); // Clear song to edit when navigating, but not when going to the edit form
+    }
     setTargetSetlistId(null); // Clear target setlist when navigating
     exitSetlist(); // Call the passed exitSetlist
-  }, [hasUnsavedChanges, setHasUnsavedChanges, setSearchQuery, setIsHeaderSearchActive, setSelectedIndex, setSongToEdit, setTargetSetlistId, exitSetlist]);
+  }, [hasUnsavedChanges, setHasUnsavedChanges, setSearchQuery, setIsHeaderSearchActive, setSelectedIndex, setSongToEdit, setTargetSetlistId, exitSetlist, setView]);
 
   const handleAdminNavigate = useCallback((query: string, type: 'songs' | 'setlists') => {
     if (type === 'songs') {
@@ -78,7 +80,7 @@ export const useNavigation = ({
       setView('SETLIST_MANAGER');
     }
     setMenuOpen(false);
-  }, [setSearchQuery, setIsHeaderSearchActive, setAdminSetlistFilter, setCameFromAdminSongSearch, setView, setMenuOpen]);
+  }, [setSearchQuery, setIsHeaderSearchActive, setAdminSetlistFilter, setCameFromAdminSongSearch, setView, setMenuOpen, setCameFromAdminSongSearch]);
 
   return {
     view,

@@ -27,6 +27,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
   const [isDeleting, setIsDeleting] = useState(false);
+  // State for orphaned files
+  const [orphanedFiles, setOrphanedFiles] = useState<StorageFile[]>([]);
+  const [loadingOrphans, setLoadingOrphans] = useState(false);
 
   const userContentCounts = useMemo(() => {
     const counts: Record<string, { songs: number, setlists: number }> = {};
@@ -85,6 +88,59 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
+  const handleFindOrphans = async () => {
+    setLoadingOrphans(true);
+    setOrphanedFiles([]); // Clear previous results
+    try {
+      const orphans = await storageService.findOrphanedPdfs(allSongs);
+      setOrphanedFiles(orphans);
+      if (orphans.length === 0) {
+        alert("No orphaned files found!");
+      }
+    } catch (error) {
+      console.error("Failed to find orphaned files", error);
+      alert("An error occurred while searching for orphaned files. See console for details.");
+    } finally {
+      setLoadingOrphans(false);
+    }
+  };
+
+  const handleDeleteAllOrphans = async () => {
+    const filesToDelete = [...orphanedFiles];
+    if (filesToDelete.length === 0) return;
+
+    if (!window.confirm(`Are you sure you want to delete all ${filesToDelete.length} orphaned files? This action is permanent.`)) {
+      return;
+    }
+
+    setLoadingOrphans(true);
+    let deletedCount = 0;
+    let failedCount = 0;
+    let spaceFreed = 0;
+
+    const deletionPromises = filesToDelete.map(file =>
+      storageService.deleteFileByPath(file.path)
+        .then(() => {
+          deletedCount++;
+          spaceFreed += file.size;
+        })
+        .catch(error => {
+          console.error(`Failed to delete orphan ${file.path}`, error);
+          failedCount++;
+        })
+    );
+
+    await Promise.all(deletionPromises);
+
+    // Update state after all operations
+    setOrphanedFiles([]); // All attempted, so clear the list
+    setStorageFiles(prev => prev.filter(f => !filesToDelete.some(deleted => deleted.path === f.path)));
+    setTotalStorageSize(prev => prev - spaceFreed);
+
+    setLoadingOrphans(false);
+    alert(`${deletedCount} orphaned files deleted. ${failedCount > 0 ? `${failedCount} failed.` : ''}`);
+  };
+
   const handleDeleteFile = async (filePath: string, fileName: string, fileSize: number) => {
     if (!window.confirm(`Are you sure you want to delete the file "${fileName}"? This action cannot be undone.`)) {
       return;
@@ -94,6 +150,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
     try {
       await storageService.deleteFileByPath(filePath);
       setStorageFiles(prevFiles => prevFiles.filter(file => file.path !== filePath));
+      setOrphanedFiles(prevFiles => prevFiles.filter(file => file.path !== filePath)); // Also remove from orphans if it's there
       setTotalStorageSize(prevSize => prevSize - fileSize);
       alert(`File "${fileName}" deleted successfully.`);
     } catch (error) {
@@ -126,20 +183,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
     setIsDeleting(true);
 
     try {
-      // In a real app, this would call your backend service.
-      await dbService.deleteUserAndContent(userToDelete.id, contentOption, currentUser.id);
+      // This now calls the secure cloud function.
+      await dbService.deleteUserAndContent(userToDelete.id, contentOption);
 
-      // IMPORTANT: Deleting a user from Firebase Authentication requires the Admin SDK
-      // on a backend server (e.g., Cloud Function). This is a simulation.
-      console.log(`Simulating deletion of user ${userToDelete.id} with content option: ${contentOption}`);
+      // The cloud function handles Auth and Firestore deletion.
+      console.log(`Successfully initiated deletion for user ${userToDelete.id}`);
 
       // Optimistically update the UI
       setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
       setUserToDelete(null); // Close modal
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete user:", error);
-      // In a real app, you might want to revert the optimistic update here.
-      alert("An error occurred while deleting the user. See console for details.");
+      // The callable function throws an HttpsError which has a message.
+      alert(`An error occurred while deleting the user: ${error.message || 'See console for details.'}`);
     } finally {
       setIsDeleting(false);
     }
@@ -208,11 +264,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {user.email}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-'}
+                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                        {user.createdAt ? (
+                          <div>
+                            <div>{new Date(user.createdAt).toLocaleDateString()}</div>
+                            <div className="text-xs text-gray-400">{new Date(user.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+                          </div>
+                        ) : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : '-'}
+                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                        {user.lastLoginAt ? (
+                          <div>
+                            <div>{new Date(user.lastLoginAt).toLocaleDateString()}</div>
+                            <div className="text-xs text-gray-400">{new Date(user.lastLoginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+                          </div>
+                        ) : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
@@ -276,12 +342,75 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
               <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{loadingStorage ? '...' : formatBytes(totalStorageSize)}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">{loadingStorage ? '...' : `${storageFiles.length} files`}</p>
             </div>
-            <button onClick={loadStorageDetails} disabled={loadingStorage} className="px-4 py-2 text-sm font-bold text-blue-600 dark:text-blue-300 border border-blue-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-wait transition-colors">
-              {loadingStorage ? 'Refreshing...' : 'Refresh'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={handleFindOrphans} disabled={loadingOrphans || loadingStorage} className="px-4 py-2 text-sm font-bold text-yellow-600 dark:text-yellow-300 border border-yellow-500 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-900/20 disabled:opacity-50 disabled:cursor-wait transition-colors">
+                {loadingOrphans ? 'Scanning...' : 'Find Orphans'}
+              </button>
+              <button onClick={loadStorageDetails} disabled={loadingStorage || loadingOrphans} className="px-4 py-2 text-sm font-bold text-blue-600 dark:text-blue-300 border border-blue-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-wait transition-colors">
+                {loadingStorage ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
           </div>
 
-          {loadingStorage ? (
+          {/* Orphaned Files Section */}
+          {(loadingOrphans || orphanedFiles.length > 0) && (
+            <div className="mb-8">
+              <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-yellow-800 dark:text-yellow-200">Orphaned Files ({orphanedFiles.length})</h3>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      These are PDF files in storage that are not linked to any song. They can be safely deleted.
+                    </p>
+                  </div>
+                  {orphanedFiles.length > 0 && !loadingOrphans && (
+                    <button
+                      onClick={handleDeleteAllOrphans}
+                      disabled={loadingOrphans}
+                      className="px-4 py-2 text-sm font-bold text-red-600 dark:text-red-300 border border-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                    >
+                      Delete All
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {loadingOrphans ? (
+                <div className="text-center py-12"><p className="text-gray-500 dark:text-gray-400">Scanning for orphaned files...</p></div>
+              ) : (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">File Name</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Original Song ID</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Size</th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        {orphanedFiles.map((file) => (
+                          <tr key={file.path} className="hover:bg-yellow-50/50 dark:hover:bg-yellow-900/10 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">{file.name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{file.songId}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{formatBytes(file.size)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                              <button onClick={() => handleDeleteFile(file.path, file.name, file.size)} className="font-medium text-red-600 dark:text-red-400 hover:underline">
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {loadingStorage && storageFiles.length === 0 ? (
             <div className="text-center py-12"><p className="text-gray-500 dark:text-gray-400">Loading storage details...</p></div>
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">

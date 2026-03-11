@@ -980,7 +980,7 @@ const App: React.FC = () => {
                 onClick={() => handleNavigation('RECENT_SONGS')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
               >
-                <i className="fa-solid fa-clock-rotate-left w-6"></i>
+                <i className="fa-solid fa-layer-group w-6"></i>
                 <span className="font-medium">Recent 50 Additions</span>
               </button>
               {/* "Add New Song" for Admin and Premium */}

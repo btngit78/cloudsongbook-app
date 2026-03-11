@@ -132,3 +132,91 @@ export const syncRoleToUserClaims = onDocumentWritten(
 
     return null;
   });
+
+export const deleteUser = functions.https.onCall(async (request) => {
+  // 1. Authentication and Authorization
+  if (!request.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "The function must be called while authenticated."
+    );
+  }
+
+  const callerUid = request.auth.uid;
+  const callerDoc = await db.collection("users").doc(callerUid).get();
+  const callerData = callerDoc.data();
+
+  if (callerData?.role !== "admin") {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Only admins can delete users."
+    );
+  }
+
+  const {userId, contentOption} = request.data;
+  if (!userId || !contentOption ||
+    !["transfer", "delete"].includes(contentOption)) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "The function must be called with 'userId' and " +
+      "'contentOption' ('transfer' or 'delete')."
+    );
+  }
+
+  if (userId === callerUid) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Admins cannot delete themselves."
+    );
+  }
+
+  try {
+    // 2. Handle user content in Firestore
+    const songsRef = db.collection("songs");
+    const setlistsRef = db.collection("setlists");
+    const userSongsQuery = songsRef.where("ownerId", "==", userId);
+    const userSetlistsQuery = setlistsRef.where("ownerId", "==", userId);
+
+    const songsSnapshot = await userSongsQuery.get();
+    const setlistsSnapshot = await userSetlistsQuery.get();
+
+    const batch = db.batch();
+
+    songsSnapshot.forEach((doc) => {
+      if (contentOption === "delete") {
+        batch.delete(doc.ref);
+      } else { // transfer to the calling admin
+        batch.update(doc.ref, {ownerId: callerUid});
+      }
+    });
+
+    setlistsSnapshot.forEach((doc) => {
+      if (contentOption === "delete") {
+        batch.delete(doc.ref);
+      } else { // transfer to the calling admin
+        batch.update(doc.ref, {ownerId: callerUid});
+      }
+    });
+
+    // 3. Delete the user document from 'users' collection
+    const userDocRef = db.collection("users").doc(userId);
+    batch.delete(userDocRef);
+
+    // Commit all Firestore changes
+    await batch.commit();
+
+    // 4. Delete the user from Firebase Authentication
+    await admin.auth().deleteUser(userId);
+
+    return {success: true, message: `Successfully deleted user ${userId}.`};
+  } catch (error) {
+    console.error(`Error deleting user ${userId}:`, error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError(
+      "internal",
+      "An internal error occurred while deleting the user."
+    );
+  }
+});

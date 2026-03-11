@@ -1,6 +1,7 @@
 import { getStorage, ref, uploadBytes, getDownloadURL, uploadBytesResumable, deleteObject, listAll, getMetadata } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 import { app } from '../firebaseConfig'; // Assumes 'app' is exported from your firebase config
+import { Song } from "../types";
 
 const storage = getStorage(app);
 const auth = getAuth(app);
@@ -125,5 +126,21 @@ export const storageService = {
       console.error("Error deleting file from storage by path:", error);
       throw error;
     }
+  },
+
+  /**
+   * Finds PDF files in storage that are not referenced by any song in the database.
+   * @param allSongs An array of all song documents from Firestore.
+   * @returns A promise that resolves to an array of orphaned file details.
+   */
+  async findOrphanedPdfs(allSongs: Song[]): Promise<{ path: string; size: number; url: string; songId: string; name: string; }[]> {
+    // 1. Get all files from storage
+    const { files: allStorageFiles } = await this.getStorageUsageDetails();
+
+    // 2. Create a set of valid PDF URLs from the songs collection for quick lookup
+    const validPdfUrls = new Set(allSongs.filter(s => s.isPdf && s.pdfUrl).map(s => s.pdfUrl));
+
+    // 3. Filter storage files to find orphans
+    return allStorageFiles.filter(file => !validPdfUrls.has(file.url));
   }
 };
