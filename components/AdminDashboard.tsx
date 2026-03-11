@@ -28,6 +28,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
   const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
   const [isDeleting, setIsDeleting] = useState(false);
   // State for orphaned files
+  const [sendingWelcomeEmail, setSendingWelcomeEmail] = useState<string | null>(null);
   const [orphanedFiles, setOrphanedFiles] = useState<StorageFile[]>([]);
   const [loadingOrphans, setLoadingOrphans] = useState(false);
 
@@ -177,6 +178,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
     }
   };
 
+  const handleSendWelcomeEmail = async (user: User) => {
+    if (!window.confirm(`Are you sure you want to send a welcome email to ${user.name}?`)) {
+        return;
+    }
+    setSendingWelcomeEmail(user.id);
+    try {
+        const result = await dbService.sendWelcomeEmail(user.id);
+        alert(result.message);
+        // Optimistically update the user in the state to reflect that the email was sent
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, welcomeEmailSentAt: Date.now() } : u));
+    } catch (error: any) {
+        alert(`Failed to send welcome email: ${error.message || 'See console for details.'}`);
+    } finally {
+        setSendingWelcomeEmail(null);
+    }
+  };
+
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
 
@@ -252,13 +270,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                   {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">{(() => {
+                      const isNewUser = user.createdAt && (Date.now() - user.createdAt < 7 * 24 * 60 * 60 * 1000); // 7 days
+                      return (
+                        <>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold mr-3">
                             {user.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
+                            {isNewUser && <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">New</span>}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
@@ -316,6 +340,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                             <option value={UserRole.ADMIN}>ADMIN</option>
                           </select>
                           <button
+                            onClick={() => handleSendWelcomeEmail(user)}
+                            disabled={!!user.welcomeEmailSentAt || sendingWelcomeEmail === user.id}
+                            className="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400 rounded-full hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={user.welcomeEmailSentAt ? `Welcome email sent on ${new Date(user.welcomeEmailSentAt).toLocaleDateString()}` : 'Send Welcome Email'}
+                          >
+                            {sendingWelcomeEmail === user.id ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-paper-plane"></i>}
+                          </button>
+                          <button
                             onClick={() => setUserToDelete(user)}
                             disabled={user.id === currentUser.id || user.role === UserRole.ADMIN}
                             className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -325,7 +357,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                           </button>
                         </div>
                       </td>
-                    </tr>
+                        </>
+                      );
+                    })()}
+                  </tr>
                   ))}
                 </tbody>
               </table>

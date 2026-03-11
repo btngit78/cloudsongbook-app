@@ -14,6 +14,7 @@ export interface User {
   settings: UserSettings;
   createdAt?: number;
   lastLoginAt?: number;
+  welcomeEmailSentAt?: number;
 }
 
 export interface UserSettings {

@@ -220,3 +220,69 @@ export const deleteUser = functions.https.onCall(async (request) => {
     );
   }
 });
+
+export const sendWelcomeEmail =
+  functions.https.onCall(async (request) => {
+    // 1. Authentication and Authorization
+    if (!request.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "The function must be called while authenticated."
+      );
+    }
+
+    const callerUid = request.auth.uid;
+    const callerDoc = await db.collection("users").doc(callerUid).get();
+    const callerData = callerDoc.data();
+
+    if (callerData?.role !== "admin") {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Only admins can perform this action."
+      );
+    }
+
+    const {userId} = request.data;
+    if (!userId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "The function must be called with a 'userId'."
+      );
+    }
+
+    try {
+      // 2. Get user details
+      const userDoc = await db.collection("users").doc(userId).get();
+      if (!userDoc.exists) {
+        throw new functions.https.HttpsError("not-found", "User not found.");
+      }
+      const userData = userDoc.data();
+      const userEmail = userData?.email;
+      const userName = userData?.name || "there";
+
+      if (!userEmail) {
+        throw new functions.https.HttpsError(
+          "failed-precondition", "User does not have an email address.");
+      }
+
+      // 3. Send the email (placeholder logic)
+      // In a real app, integrate a service like SendGrid, Mailgun,
+      // or Nodemailer here.
+      functions.logger.log("Simulating sending welcome email to" +
+        `${userEmail} for user ${userId}.`);
+
+      // 4. Update the user document to mark that a welcome email has been sent
+      await db.collection("users").doc(userId).set(
+        {welcomeEmailSentAt: Date.now()}, {merge: true});
+
+      return {success: true, message: `Welcome email sent to ${userName}.`};
+    } catch (error) {
+      console.error(`Error sending welcome email to user ${userId}:`, error);
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+
+      throw new functions.https.HttpsError("internal",
+        "An internal error occurred.");
+    }
+  });

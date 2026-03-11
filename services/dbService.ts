@@ -8,6 +8,7 @@ import { Song, User, SetList, UserSettings, UserRole } from '../types';
 
 const functions = getFunctions(app);
 const deleteUserCallable = httpsCallable(functions, 'deleteUser');
+const sendWelcomeEmailCallable = httpsCallable(functions, 'sendWelcomeEmail');
 
 const SONGS_COLLECTION = 'songs';
 const USERS_COLLECTION = 'users';
@@ -213,6 +214,16 @@ async deleteUserAndContent(userId: string, contentOption: 'transfer' | 'delete')
   } catch (error) {
     console.error("Error calling deleteUser cloud function:", error);
     // Re-throw to be handled by the UI
+    throw error;
+  }
+},
+
+async sendWelcomeEmail(userId: string): Promise<any> {
+  try {
+    const result = await sendWelcomeEmailCallable({ userId });
+    return result.data;
+  } catch (error) {
+    console.error("Error calling sendWelcomeEmail cloud function:", error);
     throw error;
   }
 }
