@@ -29,6 +29,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
   const [formData, setFormData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
   const [initialData, setInitialData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
   const [isDirty, setIsDirty] = useState(false);
+  const [keywordsInput, setKeywordsInput] = useState('');
   const [errors, setErrors] = useState<Partial<Record<keyof Song, string>>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -45,8 +46,10 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
       const data = { ...DEFAULT_FORM_DATA, ...song };
       setFormData(data);
       setInitialData(data);
+      setKeywordsInput(Array.isArray(data.keywords) ? data.keywords.join(' ') : '');
     } else {
       setInitialData(DEFAULT_FORM_DATA);
+      setKeywordsInput('');
     }
   }, [song]);
 
@@ -85,9 +88,9 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     }
     
     const keywords = Array.isArray(formData.keywords) ? formData.keywords : [];
-    const invalidKeyword = keywords.find(word => !/^[\p{L}\p{N}-]*$/u.test(word));
+    const invalidKeyword = keywords.find(word => !/^[\p{L}\p{N}/\-._]*$/u.test(word));
     if (invalidKeyword) {
-      newErrors.keywords = `Invalid keyword "${invalidKeyword}". Keywords must be alpha-numeric (intl allowed) and hyphen only.`;
+      newErrors.keywords = `Invalid keyword "${invalidKeyword}". Keywords must be alpha-numeric (intl allowed), hyphens, slashes, periods, or underscores.`;
     }
 
     if (formData.isPdf && !formData.pdfUrl) {
@@ -104,7 +107,14 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
       return;
     }
     setError(null);
-    onSave(formData);
+
+    const processedData = { ...formData };
+    if (Array.isArray(processedData.keywords)) {
+      // Use a Set to get unique keywords before saving.
+      processedData.keywords = [...new Set(processedData.keywords)];
+    }
+
+    onSave(processedData);
   };
 
   const handleCancel = async () => {
@@ -250,8 +260,12 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               maxLength={80}
               placeholder="e.g., hymn classic worship"
               className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
-              value={Array.isArray(formData.keywords) ? formData.keywords.join(' ') : formData.keywords}
-              onChange={e => setFormData({ ...formData, keywords: e.target.value.split(/\s+/).filter(Boolean) })}
+              value={keywordsInput}
+              onChange={e => {
+                const val = e.target.value;
+                setKeywordsInput(val);
+                setFormData(prev => ({ ...prev, keywords: val.split(/\s+/).filter(Boolean) }));
+              }}
             />
             <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 uppercase font-bold tracking-wider">Alpha-numeric (intl allowed) and hyphen only, space separated</p>
             {errors.keywords && <p className="text-red-500 text-xs mt-1 ml-1">{errors.keywords}</p>}

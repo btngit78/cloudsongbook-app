@@ -134,7 +134,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     });
   };
 
-  const isPremium = user?.role === UserRole.PREMIUM;
+  const isNotAdmin = user?.role !== UserRole.ADMIN;
   const filteredSetlists = useMemo(() => {
     const trimmedQuery = searchQuery.trim();
     if (!trimmedQuery) {
@@ -172,7 +172,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   let primaryTitle: string;
   let showOwnerInPrimary: boolean;
 
-  if (isPremium) {
+  if (isNotAdmin) {
     primaryList = sortedSetlists.filter(s => s.ownerId === user?.id);
     secondaryList = sortedSetlists.filter(s => s.ownerId !== user?.id);
     primaryTitle = "My Setlists";

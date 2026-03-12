@@ -15,27 +15,78 @@ const USERS_COLLECTION = 'users';
 const SETLISTS_COLLECTION = 'setlists';
 const CACHE_KEY = 'cloudsong_recent_songs';
 const RECENT_SETLISTS_CACHE_KEY = 'cloudsong_recent_setlists';
+const ALL_SONGS_CACHE_KEY = 'cloudsong_all_songs';
+const ALL_SETLISTS_CACHE_KEY = 'cloudsong_all_setlists';
+const MULTI_USER_SESSION_KEY = 'cloudsong_user_sessions';
+const MAX_SESSIONS = 4;
+
+interface UserSession {
+  userId: string;
+  lastActive: number;
+  recentSongs: Song[];
+  recentSetlists: SetList[];
+}
+
+// Helper to update local cache lists (append/update or remove)
+const updateCacheList = <T extends { id: string }>(key: string, item: T | { id: string }, isDelete: boolean) => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return;
+    let list = JSON.parse(stored) as T[];
+    if (isDelete) {
+      list = list.filter(i => i.id !== item.id);
+    } else {
+      const idx = list.findIndex(i => i.id === item.id);
+      if (idx >= 0) {
+        list[idx] = item as T;
+      } else {
+        list.push(item as T);
+      }
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Cache update failed', e);
+  }
+};
 
 export const dbService = {
   // --- Songs ---
-  async getSongs(): Promise<Song[]> {
+  async getSongs(forceRefresh = false): Promise<Song[]> {
     try {
+      if (!forceRefresh) {
+        const cached = localStorage.getItem(ALL_SONGS_CACHE_KEY);
+        if (cached) return JSON.parse(cached);
+      }
+
       const q = query(collection(db, SONGS_COLLECTION), orderBy('title'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Song));
+      const songs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Song));
+      
+      try {
+        localStorage.setItem(ALL_SONGS_CACHE_KEY, JSON.stringify(songs));
+      } catch (e) {
+        console.error("Failed to cache songs (quota?)", e);
+      }
+      
+      return songs;
     } catch (error) {
       console.error("Error fetching songs:", error);
+      // Fallback to cache on error if available
+      const cached = localStorage.getItem(ALL_SONGS_CACHE_KEY);
+      if (cached) return JSON.parse(cached);
       return [];
     }
   },
 
-  async getSong(id: string): Promise<Song | undefined> {
+  async getSong(id: string, userId?: string): Promise<Song | undefined> {
     try {
       const docRef = doc(db, SONGS_COLLECTION, id);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const song = { id: docSnap.id, ...docSnap.data() } as Song;
-        this.addToRecentCache(song);
+        if (userId) {
+          this.addToRecentCache(userId, song);
+        }
         return song;
       }
     } catch (error) {
@@ -69,11 +120,13 @@ export const dbService = {
     } as Song;
 
     await setDoc(doc(db, SONGS_COLLECTION, id), songData, { merge: true });
+    updateCacheList(ALL_SONGS_CACHE_KEY, songData, false);
     return songData;
   },
 
   async deleteSong(id: string): Promise<void> {
     await deleteDoc(doc(db, SONGS_COLLECTION, id));
+    updateCacheList(ALL_SONGS_CACHE_KEY, { id }, true);
   },
 
   // --- Users ---
@@ -135,19 +188,34 @@ export const dbService = {
   },
 
   // --- Setlists ---
-  async getSetlists(): Promise<SetList[]> {
+  async getSetlists(forceRefresh = false): Promise<SetList[]> {
     try {
+      if (!forceRefresh) {
+        const cached = localStorage.getItem(ALL_SETLISTS_CACHE_KEY);
+        if (cached) return JSON.parse(cached);
+      }
+
       // Fetch all setlists (readable by all users)
       const q = query(collection(db, SETLISTS_COLLECTION));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => {
+      const setlists = snapshot.docs.map(doc => {
         const data = doc.data();
         // Backward compatibility: map legacy songIds to choices if choices is missing
         const choices = data.choices || (data.songIds ? data.songIds.map((sid: string) => ({ songId: sid })) : []);
         return { id: doc.id, ...data, choices } as SetList;
       });
+
+      try {
+        localStorage.setItem(ALL_SETLISTS_CACHE_KEY, JSON.stringify(setlists));
+      } catch (e) {
+        console.error("Failed to cache setlists", e);
+      }
+
+      return setlists;
     } catch (error) {
       console.error("Error fetching setlists:", error);
+      const cached = localStorage.getItem(ALL_SETLISTS_CACHE_KEY);
+      if (cached) return JSON.parse(cached);
       return [];
     }
   },
@@ -163,43 +231,115 @@ export const dbService = {
       lastUsedAt: setlist.lastUsedAt || 0
     };
     await setDoc(doc(db, SETLISTS_COLLECTION, setlist.id), data, { merge: true });
+    updateCacheList(ALL_SETLISTS_CACHE_KEY, data, false);
   },
 
   async deleteSetlist(id: string): Promise<void> {
     await deleteDoc(doc(db, SETLISTS_COLLECTION, id));
+    updateCacheList(ALL_SETLISTS_CACHE_KEY, { id }, true);
+  },
+
+  // --- Multi-user Session Management ---
+  getSessions(): UserSession[] {
+    const stored = localStorage.getItem(MULTI_USER_SESSION_KEY);
+    return stored ? JSON.parse(stored) : [];
+  },
+
+  saveSessions(sessions: UserSession[]): void {
+    localStorage.setItem(MULTI_USER_SESSION_KEY, JSON.stringify(sessions));
+  },
+
+  getUserSession(userId: string): UserSession | undefined {
+    return this.getSessions().find(s => s.userId === userId);
+  },
+
+  updateUserSession(userId: string, data: Partial<Omit<UserSession, 'userId' | 'lastActive'>>): void {
+    let sessions = this.getSessions();
+    let session = sessions.find(s => s.userId === userId);
+
+    if (session) {
+      // Update existing session
+      Object.assign(session, data, { lastActive: Date.now() });
+    } else {
+      // Create new session
+      session = {
+        userId,
+        lastActive: Date.now(),
+        recentSongs: [],
+        recentSetlists: [],
+        ...data,
+      };
+      if (sessions.length >= MAX_SESSIONS) {
+        // Evict the least recently active session
+        sessions.sort((a, b) => a.lastActive - b.lastActive);
+        sessions.shift();
+      }
+      sessions.push(session);
+    }
+    this.saveSessions(sessions);
   },
 
   // --- Local Cache (LRU) ---
   // Keeps the "Offline/Caching Strategy" from the plan
-  getRecentCache(): Song[] {
-    const stored = localStorage.getItem(CACHE_KEY);
-    return stored ? JSON.parse(stored) : [];
+  getRecentCache(userId: string): Song[] {
+    const session = this.getUserSession(userId);
+    if (session) return session.recentSongs;
+
+    // Migration from old single-user cache
+    const oldCache = localStorage.getItem(CACHE_KEY);
+    if (oldCache) {
+      try {
+        const songs = JSON.parse(oldCache);
+        this.updateUserSession(userId, { recentSongs: songs });
+        localStorage.removeItem(CACHE_KEY);
+        return songs;
+      } catch (e) { localStorage.removeItem(CACHE_KEY); }
+    }
+    return [];
   },
 
-  addToRecentCache(song: Song) {
-    const current = this.getRecentCache();
+  addToRecentCache(userId: string, song: Song) {
+    const current = this.getRecentCache(userId);
     const filtered = current.filter(s => s.id !== song.id);
     const updated = [song, ...filtered].slice(0, 40); // Limit 40
-    localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
+    this.updateUserSession(userId, { recentSongs: updated });
   },
 
-  clearRecentCache() {
-    localStorage.removeItem(CACHE_KEY);
+  clearRecentCache(userId: string) {
+    this.updateUserSession(userId, { recentSongs: [] });
   },
 
   // --- Local Cache (LRU) for Setlists ---
-  getRecentSetlistsCache(): SetList[] {
-    const stored = localStorage.getItem(RECENT_SETLISTS_CACHE_KEY);
-    return stored ? JSON.parse(stored) : [];
+  getRecentSetlistsCache(userId: string): SetList[] {
+    const session = this.getUserSession(userId);
+    if (session) return session.recentSetlists;
+
+    // Migration from old single-user cache
+    const oldCache = localStorage.getItem(RECENT_SETLISTS_CACHE_KEY);
+    if (oldCache) {
+      try {
+        const setlists = JSON.parse(oldCache);
+        this.updateUserSession(userId, { recentSetlists: setlists });
+        localStorage.removeItem(RECENT_SETLISTS_CACHE_KEY);
+        return setlists;
+      } catch (e) { localStorage.removeItem(RECENT_SETLISTS_CACHE_KEY); }
+    }
+    return [];
   },
 
-  addToRecentSetlistsCache(setlist: SetList) {
-    const current = this.getRecentSetlistsCache();
-    // Remove if it already exists to move it to the front
+  addToRecentSetlistsCache(userId: string, setlist: SetList) {
+    const current = this.getRecentSetlistsCache(userId);
     const filtered = current.filter(s => s.id !== setlist.id);
-    // Add to the front and limit to 10
     const updated = [setlist, ...filtered].slice(0, 10);
-    localStorage.setItem(RECENT_SETLISTS_CACHE_KEY, JSON.stringify(updated));
+    this.updateUserSession(userId, { recentSetlists: updated });
+  },
+
+  // --- Global Cache Control ---
+  async refreshCache() {
+    await Promise.all([
+      this.getSongs(true),
+      this.getSetlists(true)
+    ]);
   },
 
 

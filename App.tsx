@@ -28,6 +28,26 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import UpdatePrompt from './components/UpdatePrompt';
 import OfflineReadyToast from './components/OfflineReadyToast';
 
+const getRelativeTime = (timestamp: number) => {
+  const diffInSeconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (diffInSeconds < 60) return 'Just now';
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
+};
+
+const TimeAgo: React.FC<{ timestamp: number }> = ({ timestamp }) => {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(interval);
+  }, []);
+  return <>{getRelativeTime(timestamp)}</>;
+};
+
 const normalizeUrlPart = (str: string) => {
   if (!str) return '';
   // This function creates a URL-friendly "slug" from a string.
@@ -70,8 +90,9 @@ const App: React.FC = () => {
     handleSearch,
     saveSong,
     deleteSong,
-    deleteSpecificSong
-  } = useSongs();
+    deleteSpecificSong,
+    refreshSongs
+  } = useSongs(user);
 
   const { searchQuery, setSearchQuery, filteredSongs, sortOrder, sortDirection, handleSortChange } = useSongSearch(allSongs);
 
@@ -109,6 +130,25 @@ const App: React.FC = () => {
   const [localShowChords, setLocalShowChords] = useState(user?.settings.showChords ?? true);
   const transposeHandledRef = useRef<string>('');
   
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  const [showSyncSuccess, setShowSyncSuccess] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('cloudsong_last_synced');
+    if (stored) {
+      setLastSyncTime(parseInt(stored, 10));
+    }
+  }, []);
+
+  // Auto-dismiss sync success toast
+  useEffect(() => {
+    if (showSyncSuccess) {
+      const timer = setTimeout(() => setShowSyncSuccess(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSyncSuccess]);
+
   // Create Setlist from Search State
   const [showCreateSetlistModal, setShowCreateSetlistModal] = useState(false);
   const [songsForSetlist, setSongsForSetlist] = useState<Song[]>([]);
@@ -154,15 +194,16 @@ const App: React.FC = () => {
     deleteSetlist,
     playSetlist,
     navigateSetlist,
-    exitSetlist
+    exitSetlist,
+    refreshSetlists
   } = useSetlists(user, handleSelectSong);
 
   // Add active setlist to recently played cache whenever it changes
   useEffect(() => {
-    if (activeSetlist) {
-      dbService.addToRecentSetlistsCache(activeSetlist);
+    if (activeSetlist && user) {
+      dbService.addToRecentSetlistsCache(user.id, activeSetlist);
     }
-  }, [activeSetlist]);
+  }, [activeSetlist, user]);
 
   // Use the new navigation hook
   const {
@@ -525,8 +566,26 @@ const App: React.FC = () => {
     if (currentSong) await performDeleteSong(currentSong);
   };
 
+  const handleSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await dbService.refreshCache();
+      await Promise.all([refreshSongs(), refreshSetlists()]);
+      const now = Date.now();
+      setLastSyncTime(now);
+      localStorage.setItem('cloudsong_last_synced', now.toString());
+      setShowSyncSuccess(true);
+    } catch (error) {
+      console.error("Sync error:", error);
+      alert("Sync failed. Please check your connection and try again.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handlePlaySetlist = async (setlist: SetList) => {
-    dbService.addToRecentSetlistsCache(setlist);
+    // The useEffect watching activeSetlist will handle adding to cache.
     await playSetlist(setlist);
     setView('SONG_VIEW');
     setMenuOpen(false);
@@ -666,6 +725,23 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Display a loading indicator after login while initial data is being fetched.
+  // `isRouteHandled` is set to true only after songs/setlists are loaded for the first time.
+  if (user && !isRouteHandled) {
+    return (
+      <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+        <Header title="CloudSongBook" searchQuery="" setSearchQuery={() => {}} onMenuClick={() => {}} />
+        <main className="flex-1 flex items-center justify-center text-center">
+          <div>
+            <i className="fa-solid fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
+            <p className="text-lg font-semibold text-gray-700 dark:text-gray-300">Loading your songbook...</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Fetching songs and setlists...</p>
+          </div>
+        </main>
       </div>
     );
   }
@@ -965,7 +1041,8 @@ const App: React.FC = () => {
               <p className="px-4 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Song Management</p>
               <button 
                 onClick={() => {
-                  setRecentlyViewed(dbService.getRecentCache().slice(0, 20));
+                  if (!user) return;
+                  setRecentlyViewed(dbService.getRecentCache(user.id).slice(0, 20));
                   setShowRecentlyViewedSubMenu(true);
                 }}
                 className="w-full flex items-center justify-between px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
@@ -1030,7 +1107,8 @@ const App: React.FC = () => {
               </button>
               <button 
                 onClick={() => {
-                  setRecentlyPlayedSetlists(dbService.getRecentSetlistsCache());
+                  if (!user) return;
+                  setRecentlyPlayedSetlists(dbService.getRecentSetlistsCache(user.id));
                   setShowRecentlyPlayedSetlistsSubMenu(true);
                 }}
                 className="w-full flex items-center justify-between px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
@@ -1071,6 +1149,22 @@ const App: React.FC = () => {
                 <i className={`fa-solid ${user.settings.theme === 'dark' ? 'fa-sun' : 'fa-moon'} w-6`}></i>
                 <span className="font-medium">{user.settings.theme === 'dark' ? 'To Light Mode' : 'To Dark Mode'}</span>
               </button>
+              <button 
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors disabled:opacity-50"
+              >
+                <i className={`fa-solid fa-rotate w-6 ${isSyncing ? 'fa-spin' : ''}`}></i>
+                <span className="font-medium">{isSyncing ? 'Syncing...' : 'Sync Data'}</span>
+              </button>
+              {lastSyncTime && (
+                <div className="flex items-center space-x-3 px-4 -mt-2 mb-2">
+                  <div className="w-6 shrink-0" aria-hidden="true" />
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                    Last synced: <TimeAgo timestamp={lastSyncTime} />
+                  </p>
+                </div>
+              )}
               <button 
                 onClick={() => handleNavigation('SETTINGS')}
                 className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
@@ -1164,6 +1258,20 @@ const App: React.FC = () => {
       {offlineReady && (
         <OfflineReadyToast onDismiss={() => setOfflineReady(false)} />
       )}
+
+      {/* Sync Success Toast */}
+      {showSyncSuccess && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-800 dark:bg-green-600 text-white rounded-xl shadow-2xl p-4 max-w-sm animate-slideInUp flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <i className="fa-solid fa-circle-check text-xl"></i>
+            <p className="text-sm font-bold">Data synced successfully!</p>
+          </div>
+          <button title="Dismiss" onClick={() => setShowSyncSuccess(false)} className="text-white/70 hover:text-white transition-colors">
+            <i className="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      )}
+
       </div>
 
       {/* Create Setlist Modal */}

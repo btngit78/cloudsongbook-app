@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Song } from '../types';
+import { Song, User } from '../types';
 import { dbService } from '../services/dbService';
 
-export const useSongs = () => {
+export const useSongs = (user: User | null) => {
   const [allSongs, setAllSongs] = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -16,10 +16,15 @@ export const useSongs = () => {
         const songs = await dbService.getSongs();
         setAllSongs(songs);
 
-        const recent = dbService.getRecentCache();
-        if (recent.length > 0) {
-          setCurrentSong(recent[0]);
+        if (user) {
+          const recent = dbService.getRecentCache(user.id);
+          if (recent.length > 0) {
+            setCurrentSong(recent[0]);
+          } else if (songs.length > 0) {
+            setCurrentSong(songs[0]);
+          }
         } else if (songs.length > 0) {
+          // No user, just pick first song
           setCurrentSong(songs[0]);
         }
       } catch (error) {
@@ -27,17 +32,17 @@ export const useSongs = () => {
       }
     };
     init();
-  }, []);
+  }, [user?.id]);
 
   const selectSong = useCallback(async (songId: string) => {
-    const song = await dbService.getSong(songId);
+    const song = await dbService.getSong(songId, user?.id);
     if (song) {
       setCurrentSong(song);
       setSearchOpen(false);
       setSearchQuery('');
     }
     return song;
-  }, []);
+  }, [user?.id]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -81,6 +86,11 @@ export const useSongs = () => {
       return true;
   };
 
+  const refreshSongs = useCallback(async () => {
+    const songs = await dbService.getSongs();
+    setAllSongs(songs);
+  }, []);
+
   return {
     allSongs,
     currentSong,
@@ -94,6 +104,7 @@ export const useSongs = () => {
     handleSearch,
     saveSong,
     deleteSong,
-    deleteSpecificSong
+    deleteSpecificSong,
+    refreshSongs
   };
 };

@@ -69,6 +69,11 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => P
     setActiveSetlistIndex(0);
   }, []);
 
+  const refreshSetlists = useCallback(async () => {
+    const data = await dbService.getSetlists();
+    setSetlists(data);
+  }, []);
+
   return {
     setlists,
     activeSetlist,
@@ -78,5 +83,6 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => P
     playSetlist,
     navigateSetlist,
     exitSetlist,
+    refreshSetlists
   };
 };
