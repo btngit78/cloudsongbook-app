@@ -35,6 +35,60 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
       </div>
 
       <div className="space-y-6">
+        {/* App Theme */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">App Theme</span>
+          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600">
+            <button
+              onClick={() => setSettings({ ...settings, theme: 'light', chordColor: '', sectionColor: '' })}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'light' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              <i className="fa-solid fa-sun mr-2"></i>Light
+            </button>
+            <button
+              onClick={() => setSettings({ ...settings, theme: 'dark', chordColor: 'amber', sectionColor: 'purple' })}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'dark' ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              <i className="fa-solid fa-moon mr-2"></i>Dark
+            </button>
+            <button
+              onClick={() => setSettings({ ...settings, theme: 'system' })}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'system' ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              <i className="fa-solid fa-desktop mr-2"></i>System
+            </button>
+          </div>
+        </div>
+        
+        {/* Additional color settings for Dark Theme */}
+        {settings.theme === 'dark' && (
+          <div className="grid grid-cols-2 gap-4 animate-fadeIn">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Chord Color</label>
+              <select
+                aria-label="Chord Color"
+                value={settings.chordColor || 'amber'}
+                onChange={(e) => setSettings({ ...settings, chordColor: e.target.value })}
+                className="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="amber">Amber (Default)</option>
+                <option value="blue">Blue</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section Label Color</label>
+              <select
+                aria-label="Section Label Color"
+                onChange={(e) => setSettings({ ...settings, sectionColor: e.target.value })}
+                className="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="purple">Purple (Default)</option>
+                <option value="teal">Teal</option>
+              </select>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Show Chords</span>
           <button 
@@ -107,57 +161,27 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
           />
         </div>
         
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">App Theme</span>
-          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 border border-gray-200 dark:border-gray-600">
-            <button
-              onClick={() => setSettings({ ...settings, theme: 'light', chordColor: '', sectionColor: '' })}
-              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'light' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
-            >
-              <i className="fa-solid fa-sun mr-2"></i>Light
-            </button>
-            <button
-              onClick={() => setSettings({ ...settings, theme: 'dark', chordColor: 'amber', sectionColor: 'purple' })}
-              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'dark' ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
-            >
-              <i className="fa-solid fa-moon mr-2"></i>Dark
-            </button>
-            <button
-              onClick={() => setSettings({ ...settings, theme: 'system' })}
-              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settings.theme === 'system' ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
-            >
-              <i className="fa-solid fa-desktop mr-2"></i>System
-            </button>
-          </div>
-        </div>
 
-        {settings.theme === 'dark' && (
-          <div className="grid grid-cols-2 gap-4 animate-fadeIn">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Chord Color</label>
-              <select
-                aria-label="Chord Color"
-                value={settings.chordColor || 'amber'}
-                onChange={(e) => setSettings({ ...settings, chordColor: e.target.value })}
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              >
-                <option value="amber">Amber (Default)</option>
-                <option value="blue">Blue</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section Label Color</label>
-              <select
-                aria-label="Section Label Color"
-                onChange={(e) => setSettings({ ...settings, sectionColor: e.target.value })}
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              >
-                <option value="purple">Purple (Default)</option>
-                <option value="teal">Teal</option>
-              </select>
-            </div>
+        {/* Print Parentheses Style */}
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Print Parentheses Style
+            </label>
+            <select title="Print Parentheses Style"
+              value={settings.parenthesesStyle || 'italic'}
+              onChange={(e) => setSettings({ ...settings, parenthesesStyle: e.target.value as any })}
+              className="rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm py-1.5"
+            >
+              <option value="italic">&nbsp;Italic (best for B&W)&nbsp;</option>
+              <option value="colored">&nbsp;Colored (Red)&nbsp;</option>
+              <option value="normal">&nbsp;Normal&nbsp;</option>
+            </select>
           </div>
-        )}
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Applies to "Print / Export to PDF" only. On-screen lyrics will always use colored style.
+          </p>
+        </div>
 
         <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
           <p className="text-xs text-gray-400 dark:text-gray-500">User ID: {user.role === UserRole.ADMIN ? 'Admin' : user.name}</p>

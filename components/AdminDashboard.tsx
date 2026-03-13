@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, UserRole, Song, SetList } from '../types';
 import { dbService } from '../services/dbService';
 import { storageService } from '../services/storageService';
@@ -23,7 +23,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   // State for deletion modal
-  const [activeTab, setActiveTab] = useState<'users' | 'storage'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'storage' | 'data'>('users');
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -31,6 +31,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
   const [sendingWelcomeEmail, setSendingWelcomeEmail] = useState<string | null>(null);
   const [orphanedFiles, setOrphanedFiles] = useState<StorageFile[]>([]);
   const [loadingOrphans, setLoadingOrphans] = useState(false);
+  // State for Data Management
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // State for Settings Backup
+  const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
+  const [isRestoringSettings, setIsRestoringSettings] = useState(false);
+  const settingsFileInputRef = useRef<HTMLInputElement>(null);
 
   const userContentCounts = useMemo(() => {
     const counts: Record<string, { songs: number, setlists: number }> = {};
@@ -219,6 +227,158 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
     }
   };
 
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      // For Admin, we backup ALL songs and setlists in the system
+      const allSongs = await dbService.getSongs();
+      const allSetlists = await dbService.getSetlists();
+      
+      const backupData = {
+        version: 1,
+        timestamp: Date.now(),
+        type: 'full_system_backup',
+        songs: allSongs,
+        setlists: allSetlists,
+        createdBy: currentUser.name
+      };
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cloudsongbook-FULL-BACKUP-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Backup failed", error);
+      alert("Failed to create backup.");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("WARNING: Restore will overwrite existing songs and setlists with matching IDs. This action affects the entire database. Continue?")) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsRestoring(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      // Restore Songs
+      let songsCount = 0;
+      if (Array.isArray(data.songs)) {
+        for (const song of data.songs) {
+          // Preserve original ownerId if present, otherwise default to admin
+          await dbService.saveSong({ ...song, ownerId: song.ownerId || currentUser.id });
+          songsCount++;
+        }
+      }
+
+      // Restore Setlists
+      let setlistsCount = 0;
+      if (Array.isArray(data.setlists)) {
+        for (const setlist of data.setlists) {
+          await dbService.saveSetlist({ ...setlist, ownerId: setlist.ownerId || currentUser.id });
+          setlistsCount++;
+        }
+      }
+
+      await dbService.refreshCache();
+      alert(`Restore completed! Processed ${songsCount} songs and ${setlistsCount} setlists.`);
+    } catch (error) {
+      console.error("Restore failed", error);
+      alert("Failed to restore data. Invalid file format.");
+    } finally {
+      setIsRestoring(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleBackupSettings = async () => {
+    setIsBackingUpSettings(true);
+    try {
+      const allUsers = await dbService.getAllUsers();
+      
+      const backupData = {
+        version: 1,
+        timestamp: Date.now(),
+        type: 'users_settings_backup',
+        users: allUsers.map(u => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          settings: u.settings
+        })),
+        createdBy: currentUser.name
+      };
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cloudsongbook-SETTINGS-BACKUP-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Settings backup failed", error);
+      alert("Failed to create settings backup.");
+    } finally {
+      setIsBackingUpSettings(false);
+    }
+  };
+
+  const handleRestoreSettings = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("WARNING: This will overwrite settings for all matched users in the backup file. Continue?")) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsRestoringSettings(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (data.type !== 'users_settings_backup' || !Array.isArray(data.users)) {
+        throw new Error("Invalid backup file format.");
+      }
+
+      let count = 0;
+      for (const userBackup of data.users) {
+        if (userBackup.id && userBackup.settings) {
+          await dbService.updateUserSettings(userBackup.id, userBackup.settings);
+          count++;
+        }
+      }
+
+      alert(`Settings restore completed! Updated settings for ${count} users.`);
+      
+      // Refresh users list to ensure consistency if we switch tabs
+      const fetchedUsers = await dbService.getAllUsers();
+      setUsers(fetchedUsers);
+    } catch (error) {
+      console.error("Settings restore failed", error);
+      alert("Failed to restore settings. Invalid file format.");
+    } finally {
+      setIsRestoringSettings(false);
+      if (settingsFileInputRef.current) settingsFileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
@@ -244,6 +404,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'storage' ? 'border-blue-500 text-blue-600 dark:text-blue-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
           >
             Storage Management
+          </button>
+          <button
+            onClick={() => setActiveTab('data')}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'data' ? 'border-blue-500 text-blue-600 dark:text-blue-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
+          >
+            Data Management
           </button>
         </nav>
       </div>
@@ -487,6 +653,79 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'data' && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">Content Backup (Songs & Setlists)</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+            Create a full JSON backup of all songs and setlists in the database, or restore data from a previous backup file. 
+            <br/><span className="font-bold text-amber-600 dark:text-amber-400">Warning:</span> Restoring data will overwrite existing entries if IDs match.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mb-10">
+            <button
+              onClick={handleBackup}
+              disabled={isBackingUp}
+              className="flex items-center justify-center px-6 py-4 border-2 border-gray-200 dark:border-gray-600 rounded-xl text-base font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-400 transition-all disabled:opacity-50"
+            >
+              {isBackingUp ? <i className="fa-solid fa-spinner fa-spin mr-3 text-xl"></i> : <i className="fa-solid fa-download mr-3 text-xl text-blue-500"></i>}
+              Download Full Backup
+            </button>
+            
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isRestoring}
+              className="flex items-center justify-center px-6 py-4 border-2 border-gray-200 dark:border-gray-600 rounded-xl text-base font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-green-400 transition-all disabled:opacity-50"
+            >
+              {isRestoring ? <i className="fa-solid fa-spinner fa-spin mr-3 text-xl"></i> : <i className="fa-solid fa-upload mr-3 text-xl text-green-500"></i>}
+              Restore from Backup
+            </button>
+            <input
+              title="Select backup JSON file"
+              type="file"
+              ref={fileInputRef}
+              onChange={handleRestore}
+              accept=".json"
+              className="hidden"
+            />
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-8">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">Users Settings Backup</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              Backup and restore individual user preferences (theme, font size, etc.). Useful for migrating user configurations.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+              <button
+                onClick={handleBackupSettings}
+                disabled={isBackingUpSettings}
+                className="flex items-center justify-center px-6 py-4 border-2 border-gray-200 dark:border-gray-600 rounded-xl text-base font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-purple-400 transition-all disabled:opacity-50"
+              >
+                {isBackingUpSettings ? <i className="fa-solid fa-spinner fa-spin mr-3 text-xl"></i> : <i className="fa-solid fa-user-gear mr-3 text-xl text-purple-500"></i>}
+                Backup User Settings
+              </button>
+              
+              <button
+                onClick={() => settingsFileInputRef.current?.click()}
+                disabled={isRestoringSettings}
+                className="flex items-center justify-center px-6 py-4 border-2 border-gray-200 dark:border-gray-600 rounded-xl text-base font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-purple-400 transition-all disabled:opacity-50"
+              >
+                {isRestoringSettings ? <i className="fa-solid fa-spinner fa-spin mr-3 text-xl"></i> : <i className="fa-solid fa-file-import mr-3 text-xl text-purple-500"></i>}
+                Restore User Settings
+              </button>
+              <input
+                title="Select settings backup JSON file"
+                type="file"
+                ref={settingsFileInputRef}
+                onChange={handleRestoreSettings}
+                accept=".json"
+                className="hidden"
+              />
+            </div>
+          </div>
         </div>
       )}
 

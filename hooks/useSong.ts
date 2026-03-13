@@ -40,6 +40,10 @@ export const useSongs = (user: User | null) => {
       setCurrentSong(song);
       setSearchOpen(false);
       setSearchQuery('');
+
+      if (user && song.isPdf && song.pdfUrl) {
+        dbService.cacheUserPdf(user.id, song.pdfUrl).catch(e => console.error("PDF Cache error", e));
+      }
     }
     return song;
   }, [user?.id]);

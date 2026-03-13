@@ -6,6 +6,14 @@ import { useMetronome } from '../hooks/useMetronome.ts';
 import YouTubePlayerModal from './YouTubePlayerModal';
 import FixLinkModal from './FixLinkModal';
 import { LyricsRenderer } from './LyricsRenderer';
+import { generateSongPdf } from '../services/pdfGenerator';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
+
+// Set up pdf.js worker from a CDN. This is crucial for react-pdf to work with bundlers like Vite.
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+
 
 interface SongViewerProps {
   song: Song;
@@ -40,12 +48,35 @@ const SongViewer: React.FC<SongViewerProps> = ({
   const [showFixLinkModal, setShowFixLinkModal] = useState(false);
   const [brokenLinkIds, setBrokenLinkIds] = useState<string[]>([]);
   const [showCopyFeedback, setShowCopyFeedback] = useState(false);
+  // PDF Viewer State
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number | undefined>();
 
   const hudRef = useRef<HTMLDivElement>(null);
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
   const displayTempo = currentChoice?.tempo || song.tempo;
   
   const { tempo: effectiveTempo, setTempo: setLocalTempo, active: metronomeActive, toggle: toggleMetronome, beatFlash, tap: handleTap, reset: resetMetronome } = useMetronome(displayTempo);
+
+  // Get container width for responsive PDF pages
+  useEffect(() => {
+    if (!song.isPdf) return;
+    const observer = new ResizeObserver(entries => {
+        const entry = entries[0];
+        if (entry) {
+            setContainerWidth(entry.contentRect.width);
+        }
+    });
+    const currentRef = pdfContainerRef.current;
+    if (currentRef) {
+        observer.observe(currentRef);
+    }
+    return () => {
+        if (currentRef) observer.unobserve(currentRef);
+    };
+  }, [song.isPdf]);
 
   useEffect(() => {
     // Close YouTube modal when song changes
@@ -133,6 +164,17 @@ const SongViewer: React.FC<SongViewerProps> = ({
     }
   };
 
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setPdfError(null);
+  };
+
+  const onDocumentLoadError = (error: Error) => {
+    console.error('Error while loading PDF:', error);
+    setPdfError('Failed to load PDF. It may be corrupt or inaccessible.');
+  };
+
+
   return (
     <>
       <div className="max-w-4xl mx-auto p-2 md:p-4 animate-fadeIn relative pb-24">
@@ -188,15 +230,15 @@ const SongViewer: React.FC<SongViewerProps> = ({
                 {showCopyFeedback ? <i className="fa-solid fa-check text-sm"></i> : <i className="fa-solid fa-link text-sm"></i>}
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (song.isPdf && song.pdfUrl) {
                     window.open(song.pdfUrl, '_blank');
                   } else {
-                    window.print();
+                    await generateSongPdf(song, settings, transpose);
                   }
                 }}
                 className="ml-2 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                title="Print Song"
+                title="Print / Export to PDF"
               >
                 <i className="fa-solid fa-print text-sm"></i>
               </button>
@@ -354,7 +396,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
         )}
       </header>
       
-      <div id="printable-song-content">
+      <div id="printable-song-content" ref={pdfContainerRef}>
         <div className="print-only">
           <h1 style={{ fontSize: '20pt', fontWeight: 'bold', color: 'black', marginBottom: '0.25rem' }}>{song.title}</h1>
           <h2 style={{ fontSize: '12pt', fontStyle: 'italic', color: 'black', marginBottom: '1rem' }}>By {song.authors || 'Unknown'}</h2>
@@ -397,12 +439,15 @@ const SongViewer: React.FC<SongViewerProps> = ({
         />
       )}
 
-      <style>{`
+    <style>{`
         @page {
             margin: 0.7in;
         }
         .print-only {
             display: none;
+        }
+        .react-pdf__Page__canvas {
+            margin: 0 auto; /* Center page canvas */
         }
         @media print {
             /* Reset body and html to allow content to flow */
@@ -410,12 +455,16 @@ const SongViewer: React.FC<SongViewerProps> = ({
                 height: auto !important;
                 overflow: visible !important;
             }
+            /* Hide react-pdf viewer during print, use LyricsRenderer */
+            .pdf-viewer-container {
+                display: none !important;
+            }
             /* Hide everything on the page by default */
             body * {
                 visibility: hidden;
             }
             /* Make the printable content and its children visible */
-            #printable-song-content, #printable-song-content * {
+            #printable-song-content, #printable-song-content *, .print-only, .print-only * {
                 visibility: visible;
             }
             /* Position the content at the top of the page, removing it from its original layout context */

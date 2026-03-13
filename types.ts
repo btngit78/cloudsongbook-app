@@ -27,6 +27,7 @@ export interface UserSettings {
   setlistTransposeMode?: 'auto' | 'confirm' | 'off';
   showComments?: boolean;
   autoRemoveBrokenLinks?: boolean;
+  parenthesesStyle?: 'normal' | 'italic' | 'colored';
 }
 
 export interface Song {

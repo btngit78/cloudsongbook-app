@@ -49,6 +49,7 @@ export const MOCK_USER: User = {
     theme: 'system',
     chordColor: '',
     sectionColor: '',
-    setlistTransposeMode: 'off'
+    setlistTransposeMode: 'off',
+    parenthesesStyle: 'italic'
   }
 };

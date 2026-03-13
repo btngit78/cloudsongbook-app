@@ -25,6 +25,7 @@ interface UserSession {
   lastActive: number;
   recentSongs: Song[];
   recentSetlists: SetList[];
+  cachedPdfUrls?: string[];
 }
 
 // Helper to update local cache lists (append/update or remove)
@@ -332,6 +333,57 @@ export const dbService = {
     const filtered = current.filter(s => s.id !== setlist.id);
     const updated = [setlist, ...filtered].slice(0, 10);
     this.updateUserSession(userId, { recentSetlists: updated });
+  },
+
+  // --- PDF Caching (LRU - Max 5 per user) ---
+  async cacheUserPdf(userId: string, url: string): Promise<void> {
+    if (!url) return;
+    
+    // 1. Update Session Metadata
+    let sessions = this.getSessions();
+    let session = sessions.find(s => s.userId === userId);
+    
+    if (!session) return; 
+    
+    const cachedUrls = session.cachedPdfUrls || [];
+    
+    // Remove if exists (to move to front)
+    const existingIndex = cachedUrls.indexOf(url);
+    if (existingIndex > -1) {
+      cachedUrls.splice(existingIndex, 1);
+    }
+    
+    // Add to front
+    cachedUrls.unshift(url);
+    
+    const urlsToRemove: string[] = [];
+    
+    // Trim to 5 (LRU eviction)
+    while (cachedUrls.length > 5) {
+      const removed = cachedUrls.pop();
+      if (removed) urlsToRemove.push(removed);
+    }
+    
+    session.cachedPdfUrls = cachedUrls;
+    this.saveSessions(sessions);
+    
+    // 2. Manage Browser Cache
+    if ('caches' in window) {
+      try {
+        const cache = await caches.open('cloudsong-pdfs');
+        await cache.add(url).catch(e => console.warn("Failed to cache PDF:", e));
+        
+        // Clean up evicted ones (check ref count across other users)
+        for (const remUrl of urlsToRemove) {
+          const isReferenced = sessions.some(s => s.userId !== userId && s.cachedPdfUrls?.includes(remUrl));
+          if (!isReferenced) {
+             await cache.delete(remUrl);
+          }
+        }
+      } catch (err) {
+        console.error("Error managing PDF cache:", err);
+      }
+    }
   },
 
   // --- Global Cache Control ---

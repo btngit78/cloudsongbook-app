@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Song, UserSettings } from '../types';
+import { getShouldUseFlats, transposeChord } from '../utils/musicUtils';
 
 interface LyricsRendererProps {
   song: Song;
@@ -7,43 +8,10 @@ interface LyricsRendererProps {
   transpose: number;
 }
 
-const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
-const SHARP_TO_FLAT: Record<string, string> = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
-
 export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, transpose }) => {
   // Determine if we should use flats for the target key based on user preference rules
   const useFlats = useMemo(() => {
-    const match = song.key.match(/^([A-G][#b]?)(m)?/);
-    const root = match ? match[1] : 'C';
-    const isMinor = !!(match && match[2]);
-    let normalizedRoot = root;
-    if (FLAT_MAP[root]) normalizedRoot = FLAT_MAP[root];
-    
-    const originalIndex = CHROMATIC_SCALE.indexOf(normalizedRoot);
-    let targetIndex = (originalIndex + transpose) % 12;
-    if (targetIndex < 0) targetIndex += 12;
-    
-    // Minor Key Specific Rules
-    if (isMinor) {
-      // Dbm(1) -> C#m, Gbm(6) -> F#m, Abm(8) -> G#m
-      if ([1, 6, 8].includes(targetIndex)) return false;
-    }
-
-    // Rules:
-    // 1. A#(10), D#(3), G#(8) -> Always Flats (Bb, Eb, Ab)
-    if ([3, 8, 10].includes(targetIndex)) return true;
-    
-    // 2. F#(6) -> Gb unless original was F(5) (semitone up)
-    if (targetIndex === 6) return originalIndex !== 5;
-    
-    // 3. C#(1) -> Db unless original was C(0) (semitone up)
-    if (targetIndex === 1) return originalIndex !== 0;
-    
-    // 4. F(5) -> Standard theory uses flats (Bb)
-    if (targetIndex === 5) return true;
-
-    return false;
+    return getShouldUseFlats(song.key, transpose);
   }, [song.key, transpose]);
 
   const chordClass = (settings.chordColor === '' || settings.chordColor === 'amber') 
@@ -54,30 +22,6 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
     ? 'text-gray-800 dark:text-indigo-500'  // default section color for both themes
     : 'text-gray-800 dark:text-teal-400';   // alternative section color for dark theme
 
-  const transposeChord = (chord: string, offset: number): string => {
-    if (offset === 0) return chord;
-    
-    return chord.split('/').map(part => {
-      const match = part.match(/^([A-G][#b]?)(.*)/);
-      if (!match) return part;
-
-      let root = match[1];
-      const suffix = match[2];
-      if (FLAT_MAP[root]) root = FLAT_MAP[root];
-
-      const index = CHROMATIC_SCALE.indexOf(root);
-      if (index === -1) return part;
-
-      let newIndex = (index + offset) % 12;
-      if (newIndex < 0) newIndex += 12;
-
-      const note = CHROMATIC_SCALE[newIndex];
-      if (useFlats && SHARP_TO_FLAT[note]) {
-        return SHARP_TO_FLAT[note] + suffix;
-      }
-      return note + suffix;
-    }).join('/');
-  };
 
   const processLine = (line: string, isChorus: boolean) => {
     if (!settings.showChords) {
@@ -96,7 +40,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
     parts.forEach(part => {
       if (part.startsWith('[') && part.endsWith(']')) {
         const chordRaw = part.slice(1, -1);
-        const chord = transposeChord(chordRaw, transpose);
+        const chord = transposeChord(chordRaw, transpose, useFlats);
         
         // Synchronize lengths so chord aligns with current text position
         const maxLen = Math.max(chordLine.length, lyricLine.length);
@@ -223,30 +167,41 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
 
   return (
     <div 
-      className={`song-renderer-root bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0' : 'p-2 md:p-4 overflow-x-auto'}`}
+      className={`song-renderer-root bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0 pdf-viewer-container' : 'p-2 md:p-4 overflow-x-auto'}`}
       style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
     >
       {song.isPdf && song.pdfUrl ? (
-        <div className="w-full h-[80vh]">
-          <object 
-            data={`${song.pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-            type="application/pdf"
-            className="w-full h-full rounded-3xl"
+        <div className="w-full h-[80vh] overflow-y-auto bg-gray-100 dark:bg-gray-900 rounded-3xl flex justify-center">
+          <Document
+            file={song.pdfUrl}
+            onLoadSuccess={({ numPages }) => (window as any).setNumPages(numPages)}
+            onLoadError={(error) => (window as any).setPdfError(error.message)}
+            loading={
+              <div className="flex items-center justify-center h-full">
+                <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-500"></i>
+                <span className="ml-3 text-gray-500">Loading PDF...</span>
+              </div>
+            }
+            error={
+              <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                <p className="font-bold text-red-500">Error</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{(window as any).pdfError || 'Failed to load PDF.'}</p>
+                <a 
+                  href={song.pdfUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm"
+                >
+                  Open PDF Directly
+                </a>
+              </div>
+            }
+            className="flex flex-col items-center"
           >
-            <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-gray-50 dark:bg-gray-800 rounded-3xl">
-              <p className="mb-4 text-gray-600 dark:text-gray-300 font-medium">
-                Unable to display PDF directly.
-              </p>
-              <a 
-                href={song.pdfUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg"
-              >
-                Open PDF
-              </a>
-            </div>
-          </object>
+            {Array.from(new Array((window as any).numPages || 0), (el, index) => (
+              <Page key={`page_${index + 1}`} pageNumber={index + 1} width={Math.min((window as any).containerWidth || 800, 800)} className="my-2 shadow-lg" renderAnnotationLayer={false} renderTextLayer={false} />
+            ))}
+          </Document>
         </div>
       ) : (
         <div className="leading-tight select-text font-mono text-gray-900 dark:text-gray-100">
