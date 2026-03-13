@@ -38,7 +38,7 @@ export const generateSongPdf = async (song: Song, settings: UserSettings, transp
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15; // mm
+  const margin = 20; // mm
   const contentWidth = pageWidth - (margin * 2);
   let y = margin;
 
@@ -74,27 +74,46 @@ export const generateSongPdf = async (song: Song, settings: UserSettings, transp
   const lineHeight = 5; 
   const chorusIndent = 10;
   let inChorus = false;
+  let isGlobalChorus = false;   // Tracks if we're in a {soc} block which can span multiple sections
 
   const lines = song.body.split('\n');
 
   lines.forEach(line => {
-    const trimmedLine = line.trim();
+    let trimmedLine = line.trim();
+  
+    // Handle Labels (Chorus:, Coda:, Verse 1:, [Chorus])
+    let isLabel = /^(Chorus|Coda|Verse|Bridge|Intro|Outro|Pre-Chorus).*[:]?$/i.test(trimmedLine) || (trimmedLine.endsWith(':') && trimmedLine.length < 20);
     
-    // Handle Directives
-    if (trimmedLine.startsWith('{soc}') || trimmedLine.startsWith('{start_of_chorus}')) {
-      inChorus = true;
-      return; // Don't print the directive
-    }
-    if (trimmedLine.startsWith('{eoc}') || trimmedLine.startsWith('{end_of_chorus}')) {
-      inChorus = false;
-      return;
-    }
-    if (trimmedLine.startsWith('#')) {
-      return; // Skip comments
+    if (!isLabel) {
+      // Handle Directives
+      if (trimmedLine.startsWith('{soc}')) {
+        inChorus = true;
+        isGlobalChorus = true;
+        line = "Chorus:";       // so the chorus label can be printed
+        isLabel = true;         // change flag for correct treatment later
+      }
+      else if (trimmedLine.startsWith('{eoc}')) {
+        inChorus = false;         // multi-block chorus terminated here
+        return;
+      }
+    
+      if (trimmedLine.startsWith('#')) {
+        return; // Skip comments
+      }
+    } else {
+      // If it's a label line, we check if it starts with "Chorus:" to set chorus state
+      if (/^Chorus[:]?$/i.test(trimmedLine)) {
+        inChorus = true;
+        isGlobalChorus = false;   // This is a single-block chorus, not a global {soc} section
+      }
     }
 
-    // Handle Labels (Chorus:, Coda:, Verse 1:, [Chorus])
-    const isLabel = /^(Chorus|Coda|Verse|Bridge|Intro|Outro|Pre-Chorus).*[:]?$/i.test(trimmedLine) || (trimmedLine.endsWith(':') && trimmedLine.length < 20);
+    if ((trimmedLine === '') && !isGlobalChorus) {
+      // empty line, single block chorus terminated here
+      inChorus = false;
+      y += lineHeight + 2; // Add spacing for empty lines
+      return;
+    }
     
     // Determine Indentation & Width
     // Explicit chorus ({soc}) OR implicit if the line is just "Chorus:" usually implies subsequent lines are chorus, 

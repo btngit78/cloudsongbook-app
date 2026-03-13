@@ -8,8 +8,8 @@ import FixLinkModal from './FixLinkModal';
 import { LyricsRenderer } from './LyricsRenderer';
 import { generateSongPdf } from '../services/pdfGenerator';
 import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 
 // Set up pdf.js worker from a CDN. This is crucial for react-pdf to work with bundlers like Vite.
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
