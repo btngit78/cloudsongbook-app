@@ -234,7 +234,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
                   if (song.isPdf && song.pdfUrl) {
                     window.open(song.pdfUrl, '_blank');
                   } else {
-                    await generateSongPdf(song, settings, transpose);
+                    await generateSongPdf(song, settings, localShowChords, transpose);
                   }
                 }}
                 className="ml-2 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"

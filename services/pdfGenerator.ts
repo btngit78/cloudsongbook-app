@@ -22,7 +22,7 @@ const loadFont = async (doc: jsPDF, url: string, fontName: string, fontStyle: st
   }
 };
 
-export const generateSongPdf = async (song: Song, settings: UserSettings, transpose: number) => {
+export const generateSongPdf = async (song: Song, settings: UserSettings, showChords: boolean,transpose: number) => {
   // 1. Setup Document & Transposition
   const doc = new jsPDF();
   
@@ -89,8 +89,8 @@ export const generateSongPdf = async (song: Song, settings: UserSettings, transp
       if (trimmedLine.startsWith('{soc}')) {
         inChorus = true;
         isGlobalChorus = true;
-        line = "Chorus:";       // so the chorus label can be printed
-        isLabel = true;         // change flag for correct treatment later
+        line = "Chorus:";         // so the chorus label can be printed
+        isLabel = true;           // change flag for correct treatment later
       }
       else if (trimmedLine.startsWith('{eoc}')) {
         inChorus = false;         // multi-block chorus terminated here
@@ -102,7 +102,7 @@ export const generateSongPdf = async (song: Song, settings: UserSettings, transp
       }
     } else {
       // If it's a label line, we check if it starts with "Chorus:" to set chorus state
-      if (/^Chorus[:]?$/i.test(trimmedLine)) {
+      if (/(^Chorus).*[:]?$/i.test(trimmedLine)) {
         inChorus = true;
         isGlobalChorus = false;   // This is a single-block chorus, not a global {soc} section
       }
@@ -127,8 +127,8 @@ export const generateSongPdf = async (song: Song, settings: UserSettings, transp
     let lyricLine = "";
 
     // Process Chords vs Lyrics
-    if (settings.showChords) {
-        const parts = line.split(/(\[.*?\])/g).filter(p => p !== '');
+    if (showChords) {
+        const parts = line.trim().split(/(\[.*?\])/g).filter(p => p !== '');
         parts.forEach(part => {
             if (part.startsWith('[') && part.endsWith(']')) {
                 const chordRaw = part.slice(1, -1);
@@ -159,7 +159,7 @@ export const generateSongPdf = async (song: Song, settings: UserSettings, transp
             }
         });
     } else {
-        lyricLine = line.replace(/\[.*?\]/g, '');
+        lyricLine = line.trim().replace(/\[.*?\]/g, '');
     }
 
     // Render Chords

@@ -26,15 +26,15 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
 
   const processLine = (line: string, isChorus: boolean) => {
     if (!settings.showChords) {
-      const lyricLine = line.replace(/\[.*?\]/g, '').trim();
-      const indent = isChorus ? '   ' : '';
+      const lyricLine = line.trim().replace(/\[.*?\]/g, '');
+      const indent = isChorus ? '    ' : '';
       return {
         chordLine: '',
         lyricLine: indent + lyricLine
       };
     }
 
-    const parts = line.split(/(\[.*?\])/g).filter(p => p !== '');
+    const parts = line.trim().split(/(\[.*?\])/g).filter(p => p !== '');
     let chordLine = '';
     let lyricLine = '';
 
@@ -60,7 +60,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
       }
     });
 
-    const indent = isChorus ? '   ' : '';
+    const indent = isChorus ? '    ' : '';
 
     return {
       chordLine: indent + chordLine,
@@ -79,7 +79,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
   };
 
   const renderContent = (body: string) => {
-    const blocks = body.split(/\n\s*\n/);
+    const blocks = body.split(/\n\s*\n\s*/);
     let chorusCount = 0;
     let isGlobalChorus = false;
     
@@ -144,7 +144,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
            
             if (lIdx === 0) {
               if (startsWithChorusLabel)        // Chorus label (e.g. "Chorus:", "{soc}") needs indentation
-                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>   Chorus:</div>;
+                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>    Chorus:</div>;
               else if (trimmed.endsWith(':'))   // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
                 return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>{line.trim()}</div>;
             }
