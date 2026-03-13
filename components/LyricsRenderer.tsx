@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Document, Page } from 'react-pdf';
 import { Song, UserSettings } from '../types';
 import { getShouldUseFlats, transposeChord } from '../utils/musicUtils';
 
@@ -174,8 +175,8 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
         <div className="w-full h-[80vh] overflow-y-auto bg-gray-100 dark:bg-gray-900 rounded-3xl flex justify-center">
           <Document
             file={song.pdfUrl}
-            onLoadSuccess={({ numPages }) => (window as any).setNumPages(numPages)}
-            onLoadError={(error) => (window as any).setPdfError(error.message)}
+            onLoadSuccess={({ numPages }: { numPages: number }) => (window as any).setNumPages(numPages)}
+            onLoadError={(error: Error) => (window as any).setPdfError(error.message)}
             loading={
               <div className="flex items-center justify-center h-full">
                 <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-500"></i>
