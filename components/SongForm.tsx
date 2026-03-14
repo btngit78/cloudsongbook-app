@@ -7,7 +7,7 @@ import { storageService } from '../services/storageService';
 
 interface SongFormProps {
   song?: Song;
-  onSave: (song: Partial<Song>) => void;
+  onSave: (song: Partial<Song>, keepOpen?: boolean) => void;
   onCancel: () => void;
 }
 
@@ -67,7 +67,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    handleSave();
+    handleSave(false); // Default form submission is Save & Exit
   };
 
   const validate = (): boolean => {
@@ -101,7 +101,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = (keepOpen: boolean) => {
     if (!validate()) {
       setError('Please fix the errors before saving.');
       return;
@@ -114,7 +114,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
       processedData.keywords = [...new Set(processedData.keywords)];
     }
 
-    onSave(processedData);
+    onSave(processedData, keepOpen);
   };
 
   const handleCancel = async () => {
@@ -149,14 +149,27 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
             onClick={handleCancel}
             className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            Cancel
+            {isDirty ? 'Cancel' : 'Back'}
           </button>
           <button
             type="button"
-            onClick={handleSave}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none transition-all"
+            onClick={() => handleSave(true)}
+            disabled={!formData.title?.trim() || !isDirty}
+            className={`px-4 py-2 rounded-lg font-bold transition-all border ${
+              !formData.title?.trim() || !isDirty ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-white dark:bg-gray-800 border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+            }`}
           >
             Save
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave(false)}
+            disabled={!formData.title?.trim() || !isDirty}
+            className={`px-6 py-2 rounded-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all ${
+              !formData.title?.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            Save & Exit
           </button>
         </div>
       </div>
@@ -336,13 +349,26 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
             onClick={handleCancel}
             className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-700 dark:text-gray-300 font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
-            Cancel
+            {isDirty ? 'Cancel' : 'Back'}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave(true)}
+            disabled={!formData.title?.trim() || !isDirty}
+            className={`px-8 py-3 rounded-xl font-bold transition-all border ${
+              !formData.title?.trim() || !isDirty ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-white dark:bg-gray-800 border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+            }`}
+          >
+            Save
           </button>
           <button
             type="submit"
-            className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-200 dark:shadow-none hover:-translate-y-0.5 transition-all"
+            disabled={!formData.title?.trim() || !isDirty}
+            className={`px-8 py-3 rounded-xl font-bold shadow-xl shadow-blue-200 dark:shadow-none hover:-translate-y-0.5 transition-all ${
+              !formData.title?.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
-            Save
+            Save & Exit
           </button>
         </div>
       </form>

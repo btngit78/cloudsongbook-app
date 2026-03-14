@@ -98,7 +98,12 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                   <i className="fa-solid fa-pen"></i>
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); onDeleteSong(s); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Are you sure you want to delete the song "${s.title}"?`)) {
+                      onDeleteSong(s);
+                    }
+                  }}
                   className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
                   title="Delete Song"
                 >

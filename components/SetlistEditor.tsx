@@ -8,7 +8,7 @@ interface SetlistEditorProps {
   initialSetlist?: SetList;
   allSongs: Song[];
   currentSong?: Song;
-  onSave: (name: string, choices: SongChoice[]) => void;
+  onSave: (name: string, choices: SongChoice[], keepOpen?: boolean) => void;
   onCancel: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
 }
@@ -21,7 +21,9 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   const [inputValue, setInputValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [sortKeys, setSortKeys] = useState<('language' | 'title')[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   
   // Metronome integration
@@ -88,7 +90,41 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   // Filter available songs using smart regex
   const availableSongs = useFilteredSongs(allSongs, searchQuery, 'relevance', 'asc');
 
+  const existingSongIds = useMemo(() => new Set(choices.map(c => c.songId)), [choices]);
+
+  const handleSort = (key: 'language' | 'title') => {
+    const newSortKeys = [key, ...sortKeys.filter(k => k !== key)].slice(0, 2);
+    setSortKeys(newSortKeys);
+
+    const sorted = [...choices].sort((choiceA, choiceB) => {
+      const songA = getSong(choiceA.songId);
+      const songB = getSong(choiceB.songId);
+
+      if (!songA || !songB) return 0;
+
+      for (const sortKey of newSortKeys) {
+        let comparison = 0;
+        if (sortKey === 'title') {
+          comparison = songA.title.localeCompare(songB.title);
+        } else if (sortKey === 'language') {
+         comparison = (songA.language || '').localeCompare(songB.language || '');
+
+
+        }
+        if (comparison !== 0) return comparison;
+      }
+      return 0;
+    });
+    setChoices(sorted);
+  };
+
   const handleAddSong = (song: Song) => {
+    if (existingSongIds.has(song.id)) {
+
+      // Silently ignore if already present
+      return;
+    }
+
     const newChoice: SongChoice = {
       songId: song.id,
       key: song.key,
@@ -108,14 +144,18 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   };
 
   const handleAddAll = () => {
-    const newChoices = availableSongs.map(song => ({
-      songId: song.id,
-      key: song.key,
-      tempo: song.tempo,
-      style: '',
-      singer: ''
-    }));
-    setChoices([...choices, ...newChoices]);
+    const newChoices = availableSongs
+      .filter(song => !existingSongIds.has(song.id))
+      .map(song => ({
+        songId: song.id,
+        key: song.key,
+        tempo: song.tempo,
+        style: '',
+        singer: ''
+      }));
+    if (newChoices.length > 0) {
+      setChoices([...choices, ...newChoices]);
+    }
     setInputValue('');
     setSearchQuery('');
   };
@@ -193,7 +233,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
   const getSong = (id: string) => allSongs.find(s => s.id === id);
 
-  const handleSave = () => {
+  const handleSave = (keepOpen: boolean) => {
     const highTempoChoice = choices.find(c => c.tempo && c.tempo > 300);
     if (highTempoChoice) {
       const song = getSong(highTempoChoice.songId);
@@ -201,8 +241,95 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
         return;
       }
     }
-    onSave(name, choices);
+    onSave(name, choices, keepOpen);
   };
+
+  const handleExport = () => {
+    setShowExportModal(true);
+  };
+
+  const closeExportModal = () => {
+    setShowExportModal(false);
+  };
+
+  const renderSortButton = (key: 'language' | 'title', label: string) => {
+    const index = sortKeys.indexOf(key);
+    const isPrimary = index === 0;
+    const isSecondary = index === 1;
+
+    let baseStyle = 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600';
+    if (isPrimary) {
+      baseStyle = 'bg-blue-600 border-blue-700 text-white shadow-inner';
+    } else if (isSecondary) {
+      baseStyle = 'bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-inner';
+    }
+
+    return (
+      <button
+        onClick={() => handleSort(key)}
+        className={`relative text-xs font-bold px-3 py-1 rounded-lg border transition-all flex items-center gap-1.5 ${baseStyle}`}
+        title={isPrimary ? `Primary sort: by ${label}` : isSecondary ? `Secondary sort: by ${label}` : `Sort by ${label}`}
+      >
+        {label}
+        {index > -1 && (
+          <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-800 dark:bg-gray-900 text-white text-[10px] font-bold ring-2 ring-white dark:ring-gray-800">
+            {index + 1}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const handleExportAsCsv = () => {
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + choices.map(choice => {
+        const song = getSong(choice.songId);
+        return [
+          song?.title,
+          song?.authors,
+          choice.key,
+          choice.tempo,
+          choice.singer,
+          choice.style
+        ].join(",");
+      }).join("\n");
+  
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${name.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'setlist'}.csv`);
+    document.body.appendChild(link); // Required for FF
+    link.click();
+    document.body.removeChild(link);
+  
+    closeExportModal();
+  };
+  
+  const handleExportAsJson = () => {
+    const jsonContent = JSON.stringify(choices.map(choice => {
+      const song = getSong(choice.songId);
+      return {
+        title: song?.title,
+        authors: song?.authors,
+        key: choice.key,
+        tempo: choice.tempo,
+        singer: choice.singer,
+        style: choice.style
+      };
+    }), null, 2);
+  
+    const blob = new Blob([jsonContent], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `${name.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'setlist'}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    closeExportModal();
+  };
+
 
   return (
     <div className="max-w-5xl mx-auto p-4 md:p-6 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mt-4 mb-12 transition-colors">
@@ -218,13 +345,28 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
             {isDirty ? 'Cancel' : 'Back'}
           </button>
           <button 
-            onClick={handleSave} 
+            onClick={() => handleSave(true)} 
             disabled={!name.trim() || !isDirty}
-            className={`px-6 py-2 rounded-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all ${
-              !name.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+            className={`px-4 py-2 rounded-lg font-bold transition-all border ${
+              !name.trim() || !isDirty ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-white dark:bg-gray-800 border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
             }`}
           >
             Save
+          </button>
+          <button 
+            onClick={() => handleSave(false)} 
+            disabled={!name.trim() || !isDirty}
+            className={`px-4 md:px-6 py-2 rounded-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all ${
+              !name.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            Save & Exit
+          </button>
+          <button 
+            onClick={handleExport}
+            className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            Export
           </button>
         </div>
       </div>
@@ -250,14 +392,23 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
                 <span>Set Order</span>
                 <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded-full">{choices.length} songs</span>
               </div>
-              {choices.length > 0 && (
-                <button 
-                  onClick={handleClearAll}
-                  className="text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-1 rounded transition-colors"
-                >
-                  Clear All
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {renderSortButton('language', 'Language')}
+                {renderSortButton('title', 'Title')}
+                {sortKeys.length > 0 && (
+                  <button onClick={() => setSortKeys([])} title="Clear Sort" className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-50 dark:hover:bg-red-900/20">
+                    <i className="fa-solid fa-xmark text-xs"></i>
+                  </button>
+                )}
+                {choices.length > 1 && (
+                  <button 
+                    onClick={handleClearAll}
+                    className="text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-1 rounded transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
             </h3>
             
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
@@ -301,10 +452,11 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
                 {currentSong && (
                   <button 
                     onClick={handleAddCurrentSong}
-                    className="text-xs font-bold text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 px-2 py-1 rounded transition-colors"
-                    title={`Add ${currentSong.title}`}
+                    disabled={existingSongIds.has(currentSong.id)}
+                    className="text-xs font-bold px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-gray-400 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
+                    title={existingSongIds.has(currentSong.id) ? `${currentSong.title} is already in the setlist` : `Add ${currentSong.title}`}
                   >
-                    + Current Song
+                    {existingSongIds.has(currentSong.id) ? 'Added' : '+ Current Song'}
                   </button>
                 )}
                 {availableSongs.length > 0 && searchQuery.length > 0 && (
@@ -325,25 +477,69 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
               onChange={e => setInputValue(e.target.value)}
             />
             <div className="flex-1 overflow-y-auto space-y-1 pr-1">
-              {availableSongs.slice(0, 50).map(song => (
-                <button 
-                  key={song.id}
-                  onClick={() => handleAddSong(song)}
-                  className="w-full text-left flex items-center justify-between p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg group transition-colors border border-transparent hover:border-blue-100 dark:hover:border-blue-800"
-                >
-                  <div className="truncate pr-2">
-                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200 truncate">{song.title}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{song.authors}</p>
-                  </div>
-                  <i className="fa-solid fa-plus text-gray-300 dark:text-gray-600 group-hover:text-blue-600 dark:group-hover:text-blue-400"></i>
-                </button>
-              ))}
+              {availableSongs.slice(0, 50).map(song => {
+                const isAdded = existingSongIds.has(song.id);
+                return (
+                  <button 
+                    key={song.id}
+                    onClick={() => handleAddSong(song)}
+                    disabled={isAdded}
+                    className={`w-full text-left flex items-center justify-between p-2 rounded-lg group transition-colors border border-transparent ${
+                      isAdded 
+                        ? 'bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' 
+                        : 'hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-100 dark:hover:border-blue-800'
+                    }`}
+                  >
+                    <div className="truncate pr-2">
+                      <p className={`text-sm font-bold truncate ${isAdded ? 'text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>{song.title}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{song.authors}</p>
+                    </div>
+                    {isAdded ? (
+                      <i className="fa-solid fa-check text-green-500 dark:text-green-400"></i>
+                    ) : (
+                      <i className="fa-solid fa-plus text-gray-300 dark:text-gray-600 group-hover:text-blue-600 dark:group-hover:text-blue-400"></i>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
       </div>
+    
+      {/* Export Setlist Modal */}  
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Export Setlist</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Choose the format to export the setlist:
+            </p>
+            
+            <div className="flex justify-center gap-4">
+              <button 
+                onClick={handleExportAsCsv}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none transition-all"
+              >
+                Export as CSV
+              </button>
+              <button
+                onClick={handleExportAsJson}
+                className="px-6 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-200 dark:shadow-none transition-all"
+              >
+                Export as JSON
+              </button>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button onClick={closeExportModal} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
 
 export default SetlistEditor;

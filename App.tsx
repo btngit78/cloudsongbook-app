@@ -457,15 +457,23 @@ const App: React.FC = () => {
     }
   }, [user?.settings.theme, setTheme]);
 
-  const handleSaveSong = async (songData: Partial<Song>) => {
+  const handleSaveSong = async (songData: Partial<Song>, keepOpen: boolean = false) => {
     if (!user) {
       console.error("User not authenticated. Cannot save song.");
       return;
     }
     // Use existing ownerId if available (editing), otherwise assign to current user (creating)
     const ownerId = songData.ownerId || user.id;
-    await saveSong({ ...songData, ownerId });
-    setView('SONG_VIEW');
+    const savedSong = await saveSong({ ...songData, ownerId });
+
+    if (keepOpen) {
+      // If we are keeping the editor open, we need to update the song being edited,
+      // especially if it was a new song that now has an ID.
+      setSongToEdit(savedSong);
+    } else {
+      setView('SONG_VIEW');
+      setSongToEdit(undefined); // Clean up state on exit
+    }
   };
 
   const handleDeleteSetlist = async (setlistId: string) => {
@@ -950,8 +958,11 @@ const App: React.FC = () => {
         {view === 'SONG_FORM' && (
           <SongForm 
             song={songToEdit}
-            onSave={handleSaveSong} 
-            onCancel={() => setView('SONG_VIEW')} 
+            onSave={handleSaveSong}
+            onCancel={() => {
+              setView('SONG_VIEW');
+              setSongToEdit(undefined);
+            }} 
           />
         )}
         {view === 'RECENT_SONGS' && (

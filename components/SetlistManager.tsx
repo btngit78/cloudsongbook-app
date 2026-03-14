@@ -80,12 +80,13 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     }
   };
 
-  const handleSave = (name: string, choices: SongChoice[]) => {
+  const handleSave = (name: string, choices: SongChoice[], keepOpen: boolean = false) => {
     const isNew = editingId === 'new';
+    const targetId = isNew ? Date.now().toString() : editingId!;
     const originalSetlist = isNew ? undefined : setlists.find(s => s.id === editingId);
 
     const newSetlist: SetList = {
-      id: isNew ? Date.now().toString() : editingId!,
+      id: targetId,
       name,
       choices,
       createdAt: originalSetlist?.createdAt || Date.now(),
@@ -95,7 +96,14 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     };
 
     onSave(newSetlist);
-    setEditingId(null);
+    
+    if (keepOpen) {
+      if (isNew) {
+        setEditingId(targetId);
+      }
+    } else {
+      setEditingId(null);
+    }
   };
 
   const handleDuplicate = (setlistToCopy: SetList) => {
