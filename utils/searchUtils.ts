@@ -26,11 +26,17 @@ export const matchesSearch = (song: any, textQuery: string, keywordGroups: strin
   // 1. Check keywords first
   if (hasKeywordGroups) {
     const songKeywords = song.keywords?.map(normalizeText) || [];
+    // Normalize and remove all spaces from the language field to match tags like #tiengviet
+    const songLanguage = normalizeText(song.language).replace(/\s+/g, '');
     
     // Match if ANY group matches (OR logic between groups)
     const matchesAnyGroup = keywordGroups.some(group => 
       // Group matches if ALL keywords in it match (AND logic within group)
-      group.every(k => songKeywords.includes(k))
+      group.every(k => 
+        songKeywords.includes(k) || 
+        (songLanguage !== '' && songLanguage === k) || 
+        songLanguage === '' // Unspecified (null) language field will match any
+      )
     );
 
     if (!matchesAnyGroup) {
@@ -53,8 +59,8 @@ export const matchesSearch = (song: any, textQuery: string, keywordGroups: strin
 export const filterSongs = (songs: any[], query: string): any[] => {
   if (!query) return songs;
   
-  const normalizedQuery = normalizeText(query);
-  const rawTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  // Split query into tokens before normalizing to preserve tag structure (#keyword)
+  const rawTokens = query.split(/\s+/).filter(Boolean);
   
   const keywordGroups: string[][] = [];
   let currentGroup: string[] = [];
@@ -68,7 +74,8 @@ export const filterSongs = (songs: any[], query: string): any[] => {
     }
 
     if (token.startsWith('#')) {
-      const kw = token.substring(1);
+      // Normalize the tag content and remove internal spaces
+      const kw = normalizeText(token.substring(1)).replace(/\s+/g, '');
       if (!kw) return;
 
       if (isAndOperation) {
@@ -79,7 +86,8 @@ export const filterSongs = (songs: any[], query: string): any[] => {
         currentGroup = [kw];
       }
     } else {
-      textParts.push(token);
+      // Treat non-tag tokens as normal text search
+      textParts.push(normalizeText(token));
       isAndOperation = false;
     }
   });

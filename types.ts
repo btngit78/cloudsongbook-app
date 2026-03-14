@@ -66,3 +66,11 @@ export interface SongChoice {
 }
 
 export type ViewState = 'SONG_VIEW' | 'SONG_FORM' | 'SETLIST_LIST' | 'SETLIST_FORM' | 'RECENT_SONGS' | 'ADVANCED_SEARCH' | 'SETTINGS';
+
+export enum Languages {
+  ENGLISH = 'english',
+  VIETNAMESE = 'vietnamese',
+  SPANISH = 'spanish',
+  FRENCH = 'french',
+  UNDEFINED = ''
+}

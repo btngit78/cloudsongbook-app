@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { Song } from '../types';
+import { Song, Languages } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
 import { PdfUploader } from './PdfUploader';
 import { storageService } from '../services/storageService';
+
 
 interface SongFormProps {
   song?: Song;
@@ -285,20 +286,28 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
           </div>
 
           {/* Language */}
-          <div className="md:col-span-1">
-            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Language</label>
+          <div>
+            <label htmlFor="language" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Language</label>
             <input
-              list="languages"
-              placeholder="Select or type..."
-              className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all placeholder-gray-400"
-              value={formData.language}
+              id="language"
+              name="language"
+              type="text"
+              list="language-options"
+              value={formData.language || ''}
               onChange={e => setFormData({ ...formData, language: e.target.value })}
+              className="w-full rounded-xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-3 focus:ring-2 focus:ring-blue-500 transition-all"
+              placeholder="e.g., English"
             />
-            <datalist id="languages">
-              {LANGUAGES.map(lang => <option key={lang} value={lang} />)}
+            <datalist id="language-options">
+              {Object.values(Languages)
+                .filter(lang => lang) // Filter out empty string from enum
+                .map(lang => (
+                  <option key={lang} value={lang.charAt(0).toUpperCase() + lang.slice(1)} />
+                ))
+              }
             </datalist>
           </div>
-        </div>
+        </div> 
 
         {/* PDF Toggle */}
         <div className="flex items-center space-x-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">

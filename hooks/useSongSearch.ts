@@ -120,11 +120,14 @@ export const useFilteredSongs = (songs: Song[], query:string, sortOrder: SortOrd
       filtered = filtered.filter(s => {
         if (!s.keywords) return false;
         const sKeywords = s.keywords.map(k => normalizeForSearch(k));
+        const songLanguage = normalizeForSearch(s.language).replace(/\s+/g, '');
         
         // Match if ANY group matches (OR logic between groups)
         return keywordGroups.some(group => {
           // A group matches if ALL its keywords are present (AND logic within group)
-          return group.every(requiredKw => sKeywords.includes(requiredKw));
+          return group.every(requiredKw => sKeywords.includes(requiredKw) ||
+                (songLanguage !== '' && songLanguage === requiredKw) || 
+                songLanguage === '') // Unspecified (null) language field will match any);
         });
       });
     }
