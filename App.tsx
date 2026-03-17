@@ -157,6 +157,7 @@ const App: React.FC = () => {
   const [targetSetlistId, setTargetSetlistId] = useState<string | null>(null); // Kept in App.tsx
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false); // Kept in App.tsx
   const [selectedIndex, setSelectedIndex] = useState(-1); // Kept in App.tsx
+  const [pinnedSearchQuery, setPinnedSearchQuery] = useState<string>('');
 
   const recentSongs = useMemo(() => {
     return [...allSongs]
@@ -639,6 +640,29 @@ const App: React.FC = () => {
     } 
   };
 
+  const isSearchPinned = useMemo(() => {
+    // It's pinned if a pinned query exists and it matches the current search query.
+    // It should not be considered "pinned" if the query is empty.
+    return pinnedSearchQuery && pinnedSearchQuery === searchQuery;
+  }, [pinnedSearchQuery, searchQuery]);
+
+  const handlePinToggle = () => {
+    if (isSearchPinned) {
+      // If the current search is already pinned, unpin it.
+      setPinnedSearchQuery('');
+    } else if (searchQuery) {
+      // Otherwise, pin the current search query.
+      setPinnedSearchQuery(searchQuery);
+    }
+  };
+
+  const handleSearchActiveChange = (isActive: boolean) => {
+    if (isActive && pinnedSearchQuery) {
+      setSearchQuery(pinnedSearchQuery);
+    }
+    setIsHeaderSearchActive(isActive);
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4">
@@ -764,7 +788,7 @@ const App: React.FC = () => {
         setSearchQuery={setSearchQuery}
         onMenuClick={() => setMenuOpen(true)}
         isSearchActive={isHeaderSearchActive}
-        onSearchActiveChange={setIsHeaderSearchActive}
+        onSearchActiveChange={handleSearchActiveChange}
         onKeyDown={handleSearchKeyDown}
         menuOpen={menuOpen}
         rightContent={
@@ -871,7 +895,20 @@ const App: React.FC = () => {
       >
         {searchQuery.length >= 2 ? (
           <>
-            <div className="px-4 py-2 flex justify-end items-center gap-2 bg-gray-50 dark:bg-gray-900 sticky top-0 z-10 border-b border-gray-100 dark:border-gray-800">
+            <div className="px-4 py-2 flex justify-between items-center gap-2 bg-gray-50 dark:bg-gray-900 sticky top-0 z-10 border-b border-gray-100 dark:border-gray-800">
+              <button
+                onClick={handlePinToggle}
+                title={isSearchPinned ? "Unpin this search" : "Pin these search results"}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                  isSearchPinned
+                    ? 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-700'
+                    : 'bg-white text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <i className={`fa-solid fa-thumbtack transition-transform ${isSearchPinned ? 'rotate-0' : 'rotate-45'}`}></i>
+                <span>{isSearchPinned ? 'Pinned' : 'Pin'}</span>
+              </button>
+              <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Sort by:</span>
               <button 
                 onClick={() => handleSortChange('dateAdded')}
@@ -917,6 +954,7 @@ const App: React.FC = () => {
                   <span>Make Setlist</span>
                 </button>
               )}
+              </div>
             </div>
             <SongList 
               songs={filteredSongs} 
