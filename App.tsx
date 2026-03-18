@@ -27,6 +27,7 @@ import { useNavigation } from './hooks/useNavigation';
 import { useRegisterSW } from 'virtual:pwa-register/react'; 
 import UpdatePrompt from './components/UpdatePrompt';
 import OfflineReadyToast from './components/OfflineReadyToast';
+import { getShouldUseFlats, transposeChord } from './utils/musicUtils';
 
 const getRelativeTime = (timestamp: number) => {
   const diffInSeconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -663,6 +664,30 @@ const App: React.FC = () => {
     setIsHeaderSearchActive(isActive);
   };
 
+  const handleEditCurrentSong = () => {
+    if (!currentSong) return;
+
+    if (transpose !== 0 && keyInfo) {
+      const confirmMsg = `You are viewing this song in ${keyInfo.currentKey} (Transposed).\n\nDo you want to edit the song using the transposed chords?\n(Cancel will open the original key: ${currentSong.key})`;
+      if (window.confirm(confirmMsg)) {
+        const shouldUseFlats = getShouldUseFlats(currentSong.key, transpose);
+        const newBody = currentSong.body.replace(/\[(.*?)\]/g, (_match, chord) => {
+          return `[${transposeChord(chord, transpose, shouldUseFlats)}]`;
+        });
+
+        const transposedSong = {
+          ...currentSong,
+          key: keyInfo.currentKey,
+          body: newBody
+        };
+
+        handleNavigation('SONG_FORM', () => setSongToEdit(transposedSong));
+        return;
+      }
+    }
+    handleNavigation('SONG_FORM', () => setSongToEdit(currentSong));
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4">
@@ -984,6 +1009,9 @@ const App: React.FC = () => {
               onUpdateSong={handleSaveSong}
               localShowChords={localShowChords}
               onSetLocalShowChords={setLocalShowChords}
+              user={user}
+              setlists={setlists}
+              onSaveSetlist={saveSetlist}
             />
             <SongNavigator 
               showBackToTop={showBackToTop}
@@ -1123,7 +1151,7 @@ const App: React.FC = () => {
               {/* "Edit Current Song" for Admin (always) or Premium (if owner) */}
               {(user.role === UserRole.ADMIN || (user.role === UserRole.PREMIUM && currentSong?.ownerId === user.id)) && (
                 <button 
-                  onClick={() => { if (currentSong) handleNavigation('SONG_FORM', () => setSongToEdit(currentSong)); }}
+                  onClick={handleEditCurrentSong}
                   disabled={!currentSong}
                   className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >

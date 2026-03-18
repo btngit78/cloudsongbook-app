@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Document, Page } from 'react-pdf';
 import { Song, UserSettings } from '../types';
 import { getShouldUseFlats, transposeChord } from '../utils/musicUtils';
@@ -10,6 +10,31 @@ interface LyricsRendererProps {
 }
 
 export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, transpose }) => {
+  // Local state for PDF handling
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(800);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Measure container width for responsive PDF rendering
+  useEffect(() => {
+    if (!song.isPdf) return;
+
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    const observer = new ResizeObserver(updateWidth);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+      updateWidth(); // Initial measure
+    }
+
+    return () => observer.disconnect();
+  }, [song.isPdf]);
+
   // Determine if we should use flats for the target key based on user preference rules
   const useFlats = useMemo(() => {
     return getShouldUseFlats(song.key, transpose);
@@ -168,6 +193,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
 
   return (
     <div 
+      ref={containerRef}
       className={`song-renderer-root bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all duration-300 overflow-hidden ${song.isPdf ? 'p-0 pdf-viewer-container' : 'p-2 md:p-4 overflow-x-auto'}`}
       style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
     >
@@ -175,8 +201,11 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
         <div className="w-full h-[80vh] overflow-y-auto bg-gray-100 dark:bg-gray-900 rounded-3xl flex justify-center">
           <Document
             file={song.pdfUrl}
-            onLoadSuccess={({ numPages }: { numPages: number }) => (window as any).setNumPages(numPages)}
-            onLoadError={(error: Error) => (window as any).setPdfError(error.message)}
+            onLoadSuccess={({ numPages }) => {
+              setNumPages(numPages);
+              setPdfError(null);
+            }}
+            onLoadError={(error: Error) => setPdfError(error.message)}
             loading={
               <div className="flex items-center justify-center h-full">
                 <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-500"></i>
@@ -186,7 +215,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
             error={
               <div className="flex flex-col items-center justify-center h-full p-4 text-center">
                 <p className="font-bold text-red-500">Error</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{(window as any).pdfError || 'Failed to load PDF.'}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{pdfError || 'Failed to load PDF.'}</p>
                 <a 
                   href={song.pdfUrl} 
                   target="_blank" 
@@ -199,8 +228,15 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
             }
             className="flex flex-col items-center"
           >
-            {Array.from(new Array((window as any).numPages || 0), (el, index) => (
-              <Page key={`page_${index + 1}`} pageNumber={index + 1} width={Math.min((window as any).containerWidth || 800, 800)} className="my-2 shadow-lg" renderAnnotationLayer={false} renderTextLayer={false} />
+            {Array.from(new Array(numPages || 0), (el, index) => (
+              <Page 
+                key={`page_${index + 1}`} 
+                pageNumber={index + 1} 
+                width={Math.min(containerWidth, 800)} 
+                className="my-2 shadow-lg" 
+                renderAnnotationLayer={false} 
+                renderTextLayer={false} 
+              />
             ))}
           </Document>
         </div>

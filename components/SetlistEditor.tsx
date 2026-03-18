@@ -133,8 +133,6 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
       singer: ''
     };
     setChoices([...choices, newChoice]);
-    setInputValue('');
-    setSearchQuery(''); // Clear search after adding
   };
 
   const handleAddCurrentSong = () => {
@@ -469,13 +467,27 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
                 )}
               </div>
             </div>
-            <input 
-              type="text" 
-              placeholder="Search library..." 
-              className="w-full mb-3 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 border-none text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 placeholder-gray-500 dark:placeholder-gray-400"
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-            />
+            <div className="relative mb-3">
+              <input 
+                type="text" 
+                placeholder="Search library..." 
+                className="w-full px-3 py-2 pr-8 rounded-lg bg-gray-100 dark:bg-gray-700 border-none text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 placeholder-gray-500 dark:placeholder-gray-400"
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+              />
+              {inputValue && (
+                <button 
+                  onClick={() => {
+                    setInputValue('');
+                    setSearchQuery('');
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 w-6 h-6 flex items-center justify-center rounded-full"
+                  title="Clear search"
+                >
+                  <i className="fa-solid fa-xmark text-xs"></i>
+                </button>
+              )}
+            </div>
             <div className="flex-1 overflow-y-auto space-y-1 pr-1">
               {availableSongs.slice(0, 50).map(song => {
                 const isAdded = existingSongIds.has(song.id);

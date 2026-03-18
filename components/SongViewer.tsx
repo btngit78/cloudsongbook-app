@@ -1,19 +1,18 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Song, UserSettings } from '../types';
-import { SetList } from '../types';
+import { Song, UserSettings, SetList, SongChoice, User } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
 import YouTubePlayerModal from './YouTubePlayerModal';
+import AddToSetlistModal from './AddToSetlistModal';
 import FixLinkModal from './FixLinkModal';
 import { LyricsRenderer } from './LyricsRenderer';
 import { generateSongPdf } from '../services/pdfGenerator';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-// Set up pdf.js worker from a CDN. This is crucial for react-pdf to work with bundlers like Vite.
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-
+// Set up pdf.js worker.
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface SongViewerProps {
   song: Song;
@@ -31,6 +30,9 @@ interface SongViewerProps {
   onUpdateSong?: (song: Partial<Song>) => void;
   localShowChords: boolean;
   onSetLocalShowChords: (show: boolean) => void;
+  user?: User;
+  setlists?: SetList[];
+  onSaveSetlist?: (setlist: SetList) => void;
 }
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -40,43 +42,20 @@ const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|e
 const SongViewer: React.FC<SongViewerProps> = ({ 
   song, settings, onUpdateSettings, transpose, onTranspose,
   activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs, localShowChords, onSetLocalShowChords,
-  onUpdateSong
+  onUpdateSong, user, setlists, onSaveSetlist
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
+  const [isAddToSetlistModalOpen, setIsAddToSetlistModalOpen] = useState(false);
   const [validVideoIds, setValidVideoIds] = useState<string[]>([]);
   const [showFixLinkModal, setShowFixLinkModal] = useState(false);
   const [brokenLinkIds, setBrokenLinkIds] = useState<string[]>([]);
   const [showCopyFeedback, setShowCopyFeedback] = useState(false);
-  // PDF Viewer State
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const pdfContainerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState<number | undefined>();
-
   const hudRef = useRef<HTMLDivElement>(null);
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
   const displayTempo = currentChoice?.tempo || song.tempo;
   
   const { tempo: effectiveTempo, setTempo: setLocalTempo, active: metronomeActive, toggle: toggleMetronome, beatFlash, tap: handleTap, reset: resetMetronome } = useMetronome(displayTempo);
-
-  // Get container width for responsive PDF pages
-  useEffect(() => {
-    if (!song.isPdf) return;
-    const observer = new ResizeObserver(entries => {
-        const entry = entries[0];
-        if (entry) {
-            setContainerWidth(entry.contentRect.width);
-        }
-    });
-    const currentRef = pdfContainerRef.current;
-    if (currentRef) {
-        observer.observe(currentRef);
-    }
-    return () => {
-        if (currentRef) observer.unobserve(currentRef);
-    };
-  }, [song.isPdf]);
 
   useEffect(() => {
     // Close YouTube modal when song changes
@@ -164,16 +143,33 @@ const SongViewer: React.FC<SongViewerProps> = ({
     }
   };
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setPdfError(null);
-  };
+  const handleAddToSetlistConfirm = (setlistId: string | null, newName: string | null, songChoice: SongChoice) => {
+    if (!onSaveSetlist || !user) return;
 
-  const onDocumentLoadError = (error: Error) => {
-    console.error('Error while loading PDF:', error);
-    setPdfError('Failed to load PDF. It may be corrupt or inaccessible.');
-  };
+    let targetSetlist: SetList;
 
+    if (setlistId && setlists) {
+      // Existing
+      const existing = setlists.find(s => s.id === setlistId);
+      if (!existing) return; // Should not happen
+      targetSetlist = { ...existing, choices: [...existing.choices, songChoice], updatedAt: Date.now() };
+    } else if (newName) {
+      // New
+      targetSetlist = {
+        id: Date.now().toString(),
+        name: newName,
+        choices: [songChoice],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        ownerId: user.id,
+        lastUsedAt: 0
+      };
+    } else {
+      return;
+    }
+    onSaveSetlist(targetSetlist);
+    setIsAddToSetlistModalOpen(false);
+  };
 
   return (
     <>
@@ -229,6 +225,15 @@ const SongViewer: React.FC<SongViewerProps> = ({
               >
                 {showCopyFeedback ? <i className="fa-solid fa-check text-sm"></i> : <i className="fa-solid fa-link text-sm"></i>}
               </button>
+              {user && setlists && onSaveSetlist && (
+                <button
+                  onClick={() => setIsAddToSetlistModalOpen(true)}
+                  className="ml-2 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  title="Add to Setlist"
+                >
+                  <i className="fa-solid fa-folder-plus text-sm"></i>
+                </button>
+              )}
               <button
                 onClick={async () => {
                   if (song.isPdf && song.pdfUrl) {
@@ -396,7 +401,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
         )}
       </header>
       
-      <div id="printable-song-content" ref={pdfContainerRef}>
+      <div id="printable-song-content">
         <div className="print-only">
           <h1 style={{ fontSize: '20pt', fontWeight: 'bold', color: 'black', marginBottom: '0.25rem' }}>{song.title}</h1>
           <h2 style={{ fontSize: '12pt', fontStyle: 'italic', color: 'black', marginBottom: '1rem' }}>By {song.authors || 'Unknown'}</h2>
@@ -424,6 +429,16 @@ const SongViewer: React.FC<SongViewerProps> = ({
         <YouTubePlayerModal
           videoIds={validVideoIds}
           onClose={() => setIsYouTubeModalOpen(false)}
+        />
+      )}
+
+      {/* Add To Setlist Modal */}
+      {isAddToSetlistModalOpen && user && setlists && (
+        <AddToSetlistModal 
+          song={song}
+          availableSetlists={setlists.filter(s => s.ownerId === user.id)}
+          onClose={() => setIsAddToSetlistModalOpen(false)}
+          onConfirm={handleAddToSetlistConfirm}
         />
       )}
 
