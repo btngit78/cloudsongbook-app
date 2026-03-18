@@ -45,6 +45,7 @@ export interface Song {
   createdAt: number;
   updatedAt: number;
   lastUsedAt: number;
+  isArchived?: boolean;
 }
 
 export interface SetList { 
@@ -55,6 +56,7 @@ export interface SetList {
   createdAt: number; 
   updatedAt: number; 
   lastUsedAt?: number;
+  isArchived?: boolean;
 } 
   
 export interface SongChoice { 

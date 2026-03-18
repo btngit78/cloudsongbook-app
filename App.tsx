@@ -478,102 +478,58 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteSetlist = async (setlistId: string) => {
-    const setlistToDelete = setlists.find(s => s.id === setlistId);
-    if (!setlistToDelete) return;
+  const handleArchiveSetlist = async (setlistId: string) => {
+    const setlistToArchive = setlists.find(s => s.id === setlistId);
+    if (!setlistToArchive) return;
 
-    let confirmMessage = `Are you sure you want to delete the setlist "${setlistToDelete.name}"?`;
+    let confirmMessage = `Are you sure you want to archive the setlist "${setlistToArchive.name}"?`;
 
     if (activeSetlist && activeSetlist.id === setlistId) {
-      confirmMessage += `\n\nWARNING: This is the currently active setlist. Deleting it will exit the current session.`;
+      confirmMessage += `\n\nWARNING: This is the currently active setlist. Archiving it will exit the current session.`;
     }
 
     if (window.confirm(confirmMessage)) {
       if (activeSetlist && activeSetlist.id === setlistId) {
         exitSetlist();
       }
-      await deleteSetlist(setlistId);
+      await saveSetlist({ ...setlistToArchive, isArchived: true });
     }
   };
 
-  const performDeleteSong = async (songToDelete: Song) => {
-    if (!songToDelete) return;
+  const performArchiveSong = async (songToArchive: Song) => {
+    if (!songToArchive) return;
 
     const setlistsContainingSong = setlists.filter(setlist =>
-      setlist.choices.some(choice => choice.songId === songToDelete.id)
+      !setlist.isArchived && setlist.choices.some(choice => choice.songId === songToArchive.id)
     );
 
-    let confirmMessage = `Are you sure you want to permanently delete the song "${songToDelete.title}"?`;
+    let confirmMessage = `Are you sure you want to archive the song "${songToArchive.title}"?`;
 
     if (setlistsContainingSong.length > 0) {
       const setlistNames = setlistsContainingSong.map(s => `"${s.name}"`).join(', ');
-      confirmMessage += `\n\nThis song is used in ${setlistsContainingSong.length} setlist(s) and will be removed from them:\n${setlistNames}`;
-      
-      if (activeSetlist && setlistsContainingSong.some(s => s.id === activeSetlist.id)) {
-        confirmMessage += `\n\nWARNING: This includes the currently active setlist.`;
-      }
+      confirmMessage += `\n\nThis song will also be removed from ${setlistsContainingSong.length} active setlist(s):\n${setlistNames}`;
     }
 
     if (window.confirm(confirmMessage)) {
-      const wasInActiveSetlist = activeSetlist && setlistsContainingSong.some(s => s.id === activeSetlist.id);
-      let deletedSongIndexInActiveSetlist = -1;
-      if (wasInActiveSetlist) {
-        deletedSongIndexInActiveSetlist = activeSetlist!.choices.findIndex(c => c.songId === songToDelete.id);
-      }
+      // 1. Archive the song by setting the flag
+      await saveSong({ ...songToArchive, isArchived: true });
 
-      const deleted = await deleteSpecificSong(songToDelete);
+      // 2. Remove the song from any active setlists it was in
+      const updatePromises = setlistsContainingSong.map(setlist => {
+        const newChoices = setlist.choices.filter(choice => choice.songId !== songToArchive.id);
+        return saveSetlist({ ...setlist, choices: newChoices });
+      });
+      await Promise.all(updatePromises);
 
-      if (deleted) {
-        // If the song was a PDF, also delete its file from storage.
-        if (songToDelete.isPdf && songToDelete.pdfUrl) {
-          try {
-            await storageService.deleteSongPdf(songToDelete.pdfUrl);
-            console.log(`Successfully deleted PDF for song: ${songToDelete.title}`);
-          } catch (error) {
-            console.error(`Failed to delete PDF from storage for song ${songToDelete.id}:`, error);
-            // Non-critical, but good to know. The DB record is gone.
-            alert(`The song was deleted, but an error occurred while removing its PDF file from storage. It may need to be removed manually.`);
-          }
-        }
-
-        const updatePromises = setlistsContainingSong.map(setlist => {
-          const newChoices = setlist.choices.filter(choice => choice.songId !== songToDelete.id);
-          return saveSetlist({ ...setlist, choices: newChoices });
-        });
-        await Promise.all(updatePromises);
-
-        // If the deleted song was in the active setlist, we need to refresh the view.
-        if (wasInActiveSetlist && deletedSongIndexInActiveSetlist !== -1) {
-          const updatedActiveSetlist = {
-            ...activeSetlist!,
-            choices: activeSetlist!.choices.filter(c => c.songId !== songToDelete.id)
-          };
-
-          if (updatedActiveSetlist.choices.length === 0) {
-            exitSetlist();
-          } else {
-            let newIndex = activeSetlistIndex;
-            if (activeSetlistIndex === deletedSongIndexInActiveSetlist) { // Deleted the current song
-              if (newIndex >= updatedActiveSetlist.choices.length) { // If it was the last one
-                newIndex = updatedActiveSetlist.choices.length - 1;
-              }
-            } else if (deletedSongIndexInActiveSetlist < activeSetlistIndex) { // Deleted a song before the current one
-              newIndex--;
-            }
-            await playSetlist(updatedActiveSetlist, newIndex);
-          }
-        }
-
-        if (view === 'SONG_FORM' && songToEdit?.id === songToDelete.id) {
-            setView('SONG_VIEW');
-            setSongToEdit(undefined);
-        }
+      // 3. If the archived song was the current song, navigate away
+      if (currentSong?.id === songToArchive.id) {
+        handleNavigation('SONG_VIEW');
       }
     }
   };
 
-  const handleDeleteSong = async () => {
-    if (currentSong) await performDeleteSong(currentSong);
+  const handleArchiveSong = async () => {
+    if (currentSong) await performArchiveSong(currentSong);
   };
 
   const handleSync = async () => {
@@ -1033,13 +989,13 @@ const App: React.FC = () => {
         )}
         {view === 'RECENT_SONGS' && (
           <RecentSongsView 
-            songs={recentSongs}
+            songs={recentSongs.filter(s => !s.isArchived)}
             onSelectSong={handleUserSongSelect}
             onEditSong={(song) => {
               setSongToEdit(song);
               setView('SONG_FORM');
             }}
-            onDeleteSong={performDeleteSong}
+            onArchiveSong={performArchiveSong}
             onBack={() => setView('SONG_VIEW')}
           />
         )}
@@ -1047,10 +1003,10 @@ const App: React.FC = () => {
           <SetlistManager
             user={user}
             setlists={setlists}
-            allSongs={allSongs}
+            allSongs={allSongs.filter(s => !s.isArchived)}
             currentSong={currentSong ?? undefined}
             onSave={saveSetlist}
-            onDelete={handleDeleteSetlist}
+            onArchive={handleArchiveSetlist}
             onPlay={handlePlaySetlist}
             onClose={() => {
               // If we came from the admin dashboard (indicated by the filter), go back there.
@@ -1084,6 +1040,10 @@ const App: React.FC = () => {
             allSongs={allSongs}
             allSetlists={setlists}
             onNavigate={handleAdminNavigate}
+            onSaveSong={saveSong}
+            onSaveSetlist={saveSetlist}
+            onDeleteSong={deleteSpecificSong}
+            onDeleteSetlist={deleteSetlist}
           />
         )}
           </>
@@ -1163,12 +1123,12 @@ const App: React.FC = () => {
               {/* "Delete Current Song" for Admin (always) or Premium (if owner) */}
               {(user.role === UserRole.ADMIN || (user.role === UserRole.PREMIUM && currentSong?.ownerId === user.id)) && (
                 <button 
-                  onClick={() => { handleDeleteSong(); setMenuOpen(false); }}
+                  onClick={() => { handleArchiveSong(); setMenuOpen(false); }}
                   disabled={!currentSong}
                   className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <i className="fa-solid fa-trash w-6"></i>
-                  <span className="font-medium">Delete Current Song</span>
+                  <i className="fa-solid fa-archive w-6"></i>
+                  <span className="font-medium">Archive Current Song</span>
                 </button>
               )}
 

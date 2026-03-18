@@ -9,6 +9,10 @@ interface AdminDashboardProps {
   allSongs: Song[];
   allSetlists: SetList[];
   onNavigate: (query: string, type: 'songs' | 'setlists') => void;
+  onSaveSong: (song: Partial<Song>) => void;
+  onSaveSetlist: (setlist: SetList) => void;
+  onDeleteSong: (song: Song) => void;
+  onDeleteSetlist: (id: string) => void;
 }
 
 interface StorageFile {
@@ -19,11 +23,11 @@ interface StorageFile {
   name: string;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, allSongs, allSetlists, onNavigate }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, allSongs, allSetlists, onNavigate, onSaveSong, onSaveSetlist, onDeleteSong, onDeleteSetlist }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   // State for deletion modal
-  const [activeTab, setActiveTab] = useState<'users' | 'storage' | 'data'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'storage' | 'data' | 'archive'>('users');
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [contentOption, setContentOption] = useState<'transfer' | 'delete'>('transfer');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -52,6 +56,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
     }
     return counts;
   }, [users, allSongs, allSetlists]);
+
+  const archivedSongs = useMemo(() => {
+    return allSongs.filter(s => s.isArchived).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }, [allSongs]);
+
+  const archivedSetlists = useMemo(() => {
+    return allSetlists.filter(s => s.isArchived).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }, [allSetlists]);
+
+  const handleUnarchiveSong = (song: Song) => onSaveSong({ ...song, isArchived: false });
+  const handleUnarchiveSetlist = (setlist: SetList) => onSaveSetlist({ ...setlist, isArchived: false });
+
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -411,6 +427,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
           >
             Data Management
           </button>
+          <button
+            onClick={() => setActiveTab('archive')}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'archive' ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
+          >
+            Archive
+          </button>
         </nav>
       </div>
 
@@ -724,6 +746,100 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                 accept=".json"
                 className="hidden"
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'archive' && (
+        <div className="space-y-8">
+          {/* Archived Songs */}
+          <div>
+            <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-3">Archived Songs ({archivedSongs.length})</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Song</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Archived On</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {archivedSongs.map(song => (
+                      <tr key={song.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">{song.title}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{song.authors}</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                          {song.updatedAt ? new Date(song.updatedAt).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => handleUnarchiveSong(song)} className="px-3 py-1 text-xs font-bold text-green-600 border border-green-500 rounded-full hover:bg-green-50">Unarchive</button>
+                            <button 
+                              onClick={() => {
+                                if (window.confirm(`PERMANENTLY DELETE "${song.title}"? This cannot be undone.`)) {
+                                  onDeleteSong(song);
+                                }
+                              }} 
+                              className="px-3 py-1 text-xs font-bold text-red-600 border border-red-500 rounded-full hover:bg-red-50">
+                              Delete Permanently
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Archived Setlists */}
+          <div>
+            <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-3">Archived Setlists ({archivedSetlists.length})</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Setlist</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Archived On</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {archivedSetlists.map(setlist => (
+                      <tr key={setlist.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">{setlist.name}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{setlist.choices.length} songs</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                          {setlist.updatedAt ? new Date(setlist.updatedAt).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => handleUnarchiveSetlist(setlist)} className="px-3 py-1 text-xs font-bold text-green-600 border border-green-500 rounded-full hover:bg-green-50">Unarchive</button>
+                            <button 
+                              onClick={() => {
+                                if (window.confirm(`PERMANENTLY DELETE setlist "${setlist.name}"? This cannot be undone.`)) {
+                                  onDeleteSetlist(setlist.id);
+                                }
+                              }} 
+                              className="px-3 py-1 text-xs font-bold text-red-600 border border-red-500 rounded-full hover:bg-red-50">
+                              Delete Permanently
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

@@ -6,7 +6,7 @@ interface RecentSongsViewProps {
   songs: Song[];
   onSelectSong: (id: string) => void;
   onEditSong: (song: Song) => void;
-  onDeleteSong: (song: Song) => void;
+  onArchiveSong: (song: Song) => void;
   onBack: () => void;
 }
 
@@ -14,7 +14,7 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
   songs,
   onSelectSong,
   onEditSong,
-  onDeleteSong,
+  onArchiveSong,
   onBack,
 }) => {
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
@@ -99,15 +99,13 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                 </button>
                 <button
                   onClick={(e) => {
-                    e.stopPropagation();
-                    if (window.confirm(`Are you sure you want to delete the song "${s.title}"?`)) {
-                      onDeleteSong(s);
-                    }
+                    e.stopPropagation(); // Confirmation is handled by the parent function
+                    onArchiveSong(s);
                   }}
                   className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
-                  title="Delete Song"
+                  title="Archive Song"
                 >
-                  <i className="fa-solid fa-trash"></i>
+                  <i className="fa-solid fa-archive"></i>
                 </button>
                 <button
                   title="Select Song"

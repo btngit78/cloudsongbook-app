@@ -56,7 +56,7 @@ const AddToSetlistModal: React.FC<AddToSetlistModalProps> = ({
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-gray-900 dark:text-white">Add to Setlist</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+          <button title="Close" onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <i className="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
@@ -77,7 +77,7 @@ const AddToSetlistModal: React.FC<AddToSetlistModalProps> = ({
             )}
             
             {mode === 'existing' && availableSetlists.length > 0 && (
-              <select 
+              <select title="Select Setlist"
                 value={selectedSetlistId}
                 onChange={(e) => setSelectedSetlistId(e.target.value)}
                 className="w-full mt-2 rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm p-2.5"

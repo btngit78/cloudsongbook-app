@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Song, SetList, SongChoice, User, UserRole } from '../types';
 import SetlistEditor from './SetlistEditor';
+import DualSetlistEditor from './DualSetlistEditor';
 import { dbService } from '../services/dbService';
 import { getSearchPattern } from '../hooks/useSongSearch';
 
@@ -10,7 +11,7 @@ interface SetlistManagerProps {
   allSongs: Song[];
   currentSong?: Song;
   onSave: (setlist: SetList) => void;
-  onDelete: (id: string) => void;
+  onArchive: (id: string) => void;
   onPlay: (setlist: SetList) => void;
   onClose: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -38,13 +39,16 @@ const getFriendlyDuration = (start: number, end: number) => {
 type SortKey = 'name' | 'updatedAt' | 'lastUsedAt';
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  user, setlists, allSongs, currentSong, onSave, onDelete, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = ''
+  user, setlists, allSongs, currentSong, onSave, onArchive, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = ''
 }) => {
   const [editingId, setEditingId] = useState<string | null>(initialEditingId || null);
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  const [showArchived, setShowArchived] = useState(false);
+  const [compareListIds, setCompareListIds] = useState<string[]>([]);
+  const [isComparing, setIsComparing] = useState(false);
 
   // Fetch owner names for setlists
   useEffect(() => {
@@ -119,6 +123,29 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     onSave(newSetlist);
   };
 
+  const handleSelectForCompare = (id: string) => {
+    setCompareListIds(prev => {
+      const newSelection = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
+      // Allow only two selections
+      if (newSelection.length > 2) {
+        return [newSelection[1], newSelection[2]];
+      }
+      return newSelection;
+    });
+  };
+
+  const handleSaveCompare = (listA: SetList, listB: SetList) => {
+    onSave(listA);
+    onSave(listB);
+    setIsComparing(false);
+    setCompareListIds([]);
+  };
+
+  const handleCancelCompare = () => {
+    setIsComparing(false);
+    // Keep selection for user reference
+  };
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -159,6 +186,10 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     return setlists.filter(s => regex.test(s.name) || (ownerNames[s.ownerId] && regex.test(ownerNames[s.ownerId])));
   }, [setlists, searchQuery, ownerNames]);
 
+  const visibleSetlists = useMemo(() => {
+    return filteredSetlists.filter(s => showArchived ? s.isArchived === true : !s.isArchived);
+  }, [filteredSetlists, showArchived]);
+
   if (editingId) {
     const setlistToEdit = setlists.find(s => s.id === editingId);
     return (
@@ -173,16 +204,33 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     );
   }
 
-  const sortedSetlists = processList(filteredSetlists);
-  
+  if (isComparing && compareListIds.length === 2) {
+    const listA = setlists.find(s => s.id === compareListIds[0]);
+    const listB = setlists.find(s => s.id === compareListIds[1]);
+    
+    if (listA && listB) {
+      return (
+        <DualSetlistEditor
+          initialListA={listA}
+          initialListB={listB}
+          allSongs={allSongs}
+          onSave={handleSaveCompare}
+          onCancel={handleCancelCompare}
+        />
+      );
+    }
+  }
+
+  const sortedSetlists = processList(visibleSetlists);
+
   let primaryList: SetList[];
   let secondaryList: SetList[] = [];
   let primaryTitle: string;
   let showOwnerInPrimary: boolean;
 
-  if (isNotAdmin) {
+  if (isNotAdmin && !showArchived) {
     primaryList = sortedSetlists.filter(s => s.ownerId === user?.id);
-    secondaryList = sortedSetlists.filter(s => s.ownerId !== user?.id);
+    secondaryList = sortedSetlists.filter(s => s.ownerId !== user?.id && !s.isArchived);
     primaryTitle = "My Setlists";
     showOwnerInPrimary = false;
   } else {
@@ -217,7 +265,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
 
   const renderTable = (list: SetList[], title: string, showOwner: boolean, headerControls?: React.ReactNode) => (
     <div className="mb-8">
-      <div className="flex justify-between items-end mb-3 px-1">
+      <div className={`flex justify-between items-end mb-3 px-1 ${showArchived ? 'text-amber-600 dark:text-amber-400' : ''}`}>
         <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300">{title} ({list.length})</h3>
         {headerControls}
       </div>
@@ -226,6 +274,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">
               <tr>
+                <th className="px-4 py-3 w-12"></th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3 w-24 text-center">Songs</th>
                 <th className="px-4 py-3 w-32">Updated</th>
@@ -237,7 +286,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {list.length === 0 ? (
                 <tr>
-                  <td colSpan={showOwner ? 6 : 5} className="px-4 py-8 text-center text-gray-400 italic">
+                  <td colSpan={showOwner ? 7 : 6} className="px-4 py-8 text-center text-gray-400 italic">
                     No setlists found.
                   </td>
                 </tr>
@@ -247,7 +296,15 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                   const displayOwner = showOwner && ownerName && ownerName !== 'Admin';
                   
                   return (
-                    <tr key={setlist.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+                    <tr key={setlist.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group ${setlist.isArchived ? 'bg-yellow-50/50 dark:bg-yellow-900/10 opacity-70' : ''}`}>
+                      <td className="px-4 py-3 text-center">
+                        <input title="Select for Compare"
+                          type="checkbox"
+                          checked={compareListIds.includes(setlist.id)}
+                          onChange={() => handleSelectForCompare(setlist.id)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                      </td>
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
                         <div className="flex items-center gap-2">
                           <button title="Play"onClick={() => onPlay(setlist)} className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-colors">
@@ -270,7 +327,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                           {(user?.role === UserRole.ADMIN || setlist.ownerId === user?.id) && (
                             <>
                               <button onClick={() => startEdit(setlist)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50"><i className="fa-solid fa-pen"></i></button>
-                              <button onClick={() => onDelete(setlist.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50"><i className="fa-solid fa-trash"></i></button>
+                              <button onClick={() => onArchive(setlist.id)} title="Archive" className="p-1.5 text-gray-400 hover:text-amber-600 rounded-md hover:bg-amber-50"><i className="fa-solid fa-archive"></i></button>
                             </>
                           )}
                           <button onClick={() => handleDuplicate(setlist)} title="Duplicate" className="p-1.5 text-gray-400 hover:text-green-600 rounded-md hover:bg-green-50"><i className="fa-solid fa-copy"></i></button>
@@ -302,7 +359,27 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
             className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
           />
         </div>
+        
+        <label className="flex items-center space-x-2 cursor-pointer text-sm font-medium text-gray-600 dark:text-gray-400">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={() => setShowArchived(!showArchived)}
+            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-amber-600 focus:ring-amber-500 bg-white dark:bg-gray-700"
+          />
+          <span>Show Archived</span>
+        </label>
 
+        {compareListIds.length > 0 && (
+          <button
+            onClick={() => setIsComparing(true)}
+            disabled={compareListIds.length !== 2}
+            className="px-4 py-2 bg-yellow-500 text-white rounded-lg font-bold hover:bg-yellow-600 shadow-lg shadow-yellow-200 dark:shadow-none flex items-center space-x-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i className="fa-solid fa-right-left"></i>
+            <span>Compare ({compareListIds.length}/2)</span>
+          </button>
+        )}
         <div className="flex space-x-3 flex-shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Back</button>
           <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none flex items-center space-x-2 transition-all">
