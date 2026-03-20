@@ -344,7 +344,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
                 rows={15}
                 required={!formData.isPdf}
                 placeholder="[G]Amazing [G7]grace! How [C]sweet the [G]sound..."
-                className="w-full rounded-2xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-4 font-mono text-sm focus:ring-2 focus:ring-blue-500 transition-all min-h-[400px] placeholder-gray-400"
+                className="w-full rounded-2xl border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm border p-4 font-mono text-md focus:ring-2 focus:ring-blue-500 transition-all min-h-[400px] placeholder-gray-400"
                 value={formData.body}
                 onChange={e => setFormData({ ...formData, body: e.target.value })}
               />
