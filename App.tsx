@@ -17,7 +17,6 @@ import AdminDashboard from './components/AdminDashboard';
 import { useAuth } from './hooks/useAuth';
 import { useSongs } from './hooks/useSong';
 import { useSetlists } from './hooks/useSetlists';
-import { useScroll } from './hooks/useScroll';
 import { useTranspose, getKeyLabel } from './hooks/useTranspose';
 import { Header } from './components/Header';
 import { SongList } from './components/SongList';
@@ -373,14 +372,49 @@ const App: React.FC = () => {
     }
   };
 
-  const {
-    scrollContainerRef,
-    showBackToTop,
-    passedChoruses,
-    handleScroll,
-    scrollToTop,
-    scrollToChorus
-  } = useScroll(currentSong);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const scrollToChorus = (index: number) => {
+    const element = document.getElementById(`chorus-${index}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // Generate labels for tracked sections (Chorus, Coda) to match LyricsRenderer logic
+  const sectionLabels = useMemo(() => {
+    if (!currentSong) return [];
+    const blocks = currentSong.body.split(/\n\s*\n\s*/);
+    const labels: string[] = [];
+    let chorusCount = 1;
+    let firstChorusIndex = -1;
+    
+    const keywords = ['chorus', 'verse', 'bridge', 'coda', 'intro', 'outro', 'pre-chorus', 'instrumental'];
+
+    blocks.forEach(block => {
+      const firstLine = block.split('\n')[0].trim().toLowerCase();
+      
+      if (firstLine.startsWith('{soc}') || firstLine.startsWith('chorus')) {
+        if (firstChorusIndex === -1) firstChorusIndex = labels.length;
+        labels.push(`Chorus ${chorusCount++}`);
+      } else if (keywords.some(k => firstLine.startsWith(k))) {
+        // Capitalize the first letter for the label (e.g., "verse 1" -> "Verse 1")
+        let cleanLine = firstLine;
+        if (cleanLine.endsWith(':')) {
+          cleanLine = cleanLine.slice(0, -1);
+        }
+        labels.push(cleanLine.charAt(0).toUpperCase() + cleanLine.slice(1));
+      }
+    });
+    if (firstChorusIndex !== -1 && chorusCount === 2) {
+      labels[firstChorusIndex] = `Chorus`;  // Ensure the only chorus will be labeled simply as "Chorus"
+    }
+    return labels;
+  }, [currentSong?.body]);
 
   const {
     transpose,
@@ -865,7 +899,6 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main 
         ref={scrollContainerRef}
-        onScroll={handleScroll}
         className="flex-1 overflow-y-auto relative"
         onMouseDown={(e) => {
           // Prevent closing search when clicking on scrollbar or empty space in search results
@@ -970,8 +1003,7 @@ const App: React.FC = () => {
               onSaveSetlist={saveSetlist}
             />
             <SongNavigator 
-              showBackToTop={showBackToTop}
-              passedChoruses={passedChoruses}
+              sectionLabels={sectionLabels}
               onScrollToTop={scrollToTop}
               onScrollToChorus={scrollToChorus}
             />

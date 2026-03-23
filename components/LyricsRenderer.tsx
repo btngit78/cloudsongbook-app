@@ -111,8 +111,11 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
     return blocks.map((block, bIdx) => {
       const lines = block.split('\n');
       const firstLineTrimmed = lines[0].toLowerCase().trim();
+      const keywords = ['chorus', 'verse', 'bridge', 'coda', 'intro', 'outro', 'pre-chorus', 'instrumental'];
+      const isSectionLabel = keywords.some(keyword => firstLineTrimmed.startsWith(keyword));
       const isSocMarker = firstLineTrimmed.startsWith('{soc}');
       const isChorusKeyword = firstLineTrimmed.startsWith('chorus');
+      const sectionNum = isSectionLabel ? firstLineTrimmed.split(' ')[1] || '' : '';
       
       // Only {soc} sets the global state that persists across blocks
       if (isSocMarker) {
@@ -124,8 +127,9 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
       let inChorusSection = isGlobalChorus || isChorusKeyword;
       let mbClass = 'mb-2';
       
-      const startsWithChorusLabel = isSocMarker || isChorusKeyword;
-      const sectionId = startsWithChorusLabel ? `chorus-${chorusCount++}` : undefined;
+      // Track all sections that act as landmarks (including Verses, Bridges, etc.)
+      const isTrackedSection = isSocMarker || isSectionLabel;
+      const sectionId = isTrackedSection ? `chorus-${chorusCount++}` : undefined;
 
       return (
         <div key={bIdx} id={sectionId} className={`${mbClass} last:mb-6`}>
@@ -168,9 +172,9 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
             }
            
             if (lIdx === 0) {
-              if (startsWithChorusLabel)        // Chorus label (e.g. "Chorus:", "{soc}") needs indentation
-                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>    Chorus:</div>;
-              else if (trimmed.endsWith(':'))   // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
+              if (isChorusKeyword || isSocMarker)        // Chorus label (e.g. "Chorus:", "{soc}") needs indentation
+                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>    Chorus{sectionNum !== '' ? ` ${sectionNum}` : ''}:</div>;
+              else if (isSectionLabel)          // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
                 return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>{line.trim()}</div>;
             }
 
