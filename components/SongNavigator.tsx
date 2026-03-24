@@ -3,13 +3,13 @@ import React, { useState, useEffect } from 'react';
 interface SongNavigatorProps {
   sectionLabels: string[];
   onScrollToTop: () => void;
-  onScrollToChorus: (index: number) => void;
+  onScrollToLabel: (label: string) => void;
 }
 
 const SongNavigator: React.FC<SongNavigatorProps> = ({
   sectionLabels,
   onScrollToTop,
-  onScrollToChorus,
+  onScrollToLabel,
 }) => {
   const [pulsingIndex, setPulsingIndex] = useState<number | null>(null);
 
@@ -33,21 +33,23 @@ const SongNavigator: React.FC<SongNavigatorProps> = ({
 
   return (
     <div className="fixed right-6 bottom-6 flex flex-col items-end space-y-3 z-40 pointer-events-none">
-      {/* Chorus Stack */}
+      {/* Section Stack */}
       <div className="flex flex-col items-end space-y-2 pointer-events-auto">
-        {sectionLabels.map((_, index) => {
+        {sectionLabels.map((el, index) => {
+          const isChorus = el.toLowerCase().startsWith('chorus');
           const isPulsing = index === pulsingIndex;
           return (
             <div key={index} className="animate-fadeIn flex">
               <button
                 onClick={() => {
                   setPulsingIndex(index);
-                  onScrollToChorus(index);
+                  onScrollToLabel(el);
                 }}
                 className={`bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-lg transition-all flex items-center ${isPulsing ? 'animate-pulse-custom ring-2 ring-white dark:ring-gray-900' : 'opacity-90 hover:opacity-100'}`}
-                title={`Jump to section`}             >
-                <i className={`fa-solid ${getIconClass(sectionLabels[index])} mr-2`}></i>
-                {sectionLabels[index] || `Chorus ${index + 1}`}
+                title={`Jump to ` +  el}
+              >
+                <i className={`fa-solid ${getIconClass(el)} mr-2`}></i>
+                  {el}
               </button>
             </div>
           );

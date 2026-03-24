@@ -378,14 +378,24 @@ const App: React.FC = () => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const scrollToChorus = (index: number) => {
-    const element = document.getElementById(`chorus-${index}`);
+  const scrollToLabel = (label: string) => {
+    label = label.toLowerCase();
+    const isChorus = label.startsWith('chorus');
+    if (isChorus) {
+      if (isNaN(parseInt(label.slice(-1)))) 
+        label = label + '-0';   // The first and maybe the only one chorus (labeled as "Chorus"), change to 'chorus-0'
+      else 
+        label = label.slice(0, -2) + '-' + (parseInt(label.slice(-1))-1).toString(); // Chorus 2 -> chorus-1
+    }
+
+    const element = document.getElementById(label.replace(/\s+/g, '-'));
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
-  // Generate labels for tracked sections (Chorus, Coda) to match LyricsRenderer logic
+  // Generate labels for all sections for navigation based on the song body. This is used for both 
+  // the navigator and the section headers in the lyrics renderer.
   const sectionLabels = useMemo(() => {
     if (!currentSong) return [];
     const blocks = currentSong.body.split(/\n\s*\n\s*/);
@@ -1005,7 +1015,7 @@ const App: React.FC = () => {
             <SongNavigator 
               sectionLabels={sectionLabels}
               onScrollToTop={scrollToTop}
-              onScrollToChorus={scrollToChorus}
+              onScrollToLabel={scrollToLabel}
             />
           </>
         )}

@@ -115,8 +115,12 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
       const isSectionLabel = keywords.some(keyword => firstLineTrimmed.startsWith(keyword));
       const isSocMarker = firstLineTrimmed.startsWith('{soc}');
       const isChorusKeyword = firstLineTrimmed.startsWith('chorus');
-      const sectionNum = isSectionLabel ? firstLineTrimmed.split(' ')[1] || '' : '';
+      // Track chorus sections because they might not be numbered. Verses must be numbered to avoid duplicated IDs so 
+      // they don't get tracked. Other sections must always be unique so they also don't get tracked. All labels except
+      // chorus labels get their IDs from their respective section labels.
+      const isTrackedSection = isSocMarker || isChorusKeyword;
       
+      // Only Chorus blocks get tracked because they may not be numbered explicitly.
       // Only {soc} sets the global state that persists across blocks
       if (isSocMarker) {
         isGlobalChorus = true;
@@ -125,11 +129,10 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
       // A block is part of a chorus if we're in a global {soc} section,
       // OR if the block itself starts with "Chorus:"
       let inChorusSection = isGlobalChorus || isChorusKeyword;
+
+      const sectionId = isTrackedSection ? `chorus-${chorusCount++}` : 
+        (isSectionLabel ? `${firstLineTrimmed.slice(0, -1).replace(/\s+/g, '-')}` : '');
       let mbClass = 'mb-2';
-      
-      // Track all sections that act as landmarks (including Verses, Bridges, etc.)
-      const isTrackedSection = isSocMarker || isSectionLabel;
-      const sectionId = isTrackedSection ? `chorus-${chorusCount++}` : undefined;
 
       return (
         <div key={bIdx} id={sectionId} className={`${mbClass} last:mb-6`}>
@@ -172,9 +175,17 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
             }
            
             if (lIdx === 0) {
-              if (isChorusKeyword || isSocMarker)        // Chorus label (e.g. "Chorus:", "{soc}") needs indentation
-                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>    Chorus{sectionNum !== '' ? ` ${sectionNum}` : ''}:</div>;
-              else if (isSectionLabel)          // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
+              // Unless Chorus blocks are explicitly numbered in which case we provide the number, 
+              // otherwise the first chorus block is just "Chorus:", including {soc/eoc} blocks.  
+              // Subsequent Chorus blocks will be "Chorus 2:", "Chorus 3:", etc. to help differentiate them.
+              // Most songs will only have one chorus block, so it won't be numbered.
+              // The IDs provided for section rendering and are used for navigation are in lowercase 
+              // and spaces are replaced with dashes, possibly followed by a number (for choruses and verses).
+              if (isChorusKeyword)        // Chorus label "Chorus:" needs indentation
+                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>    Chorus{trimmed.length > 7 ? ` ${chorusCount}` : ''}:</div>;
+              if (isSocMarker)            // Chorus label "{soc}") needs indentation
+                return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>    Chorus{chorusCount === 1 ? '' : ` ${chorusCount}`}:</div>;
+              else if (isSectionLabel)    // Section header (e.g. "Verse 1:", "Bridge:", "Coda:")
                 return <div key={lIdx} className={`font-bold ${sectionClass} mb-1 whitespace-pre`}>{line.trim()}</div>;
             }
 
