@@ -7,14 +7,17 @@ interface LyricsRendererProps {
   song: Song;
   settings: UserSettings;
   transpose: number;
+  pdfContainerRef?: React.RefObject<HTMLDivElement>;
 }
 
-export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, transpose }) => {
+export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, transpose, pdfContainerRef }) => {
   // Local state for PDF handling
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>(800);
   const containerRef = useRef<HTMLDivElement>(null);
+  const localPdfScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = pdfContainerRef || localPdfScrollRef;
 
   // Measure container width for responsive PDF rendering
   useEffect(() => {
@@ -34,6 +37,13 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
 
     return () => observer.disconnect();
   }, [song.isPdf]);
+
+  // Reset PDF scroll position when song changes
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [song.id, scrollRef]);
 
   // Determine if we should use flats for the target key based on user preference rules
   const useFlats = useMemo(() => {
@@ -213,7 +223,7 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
       style={!song.isPdf ? { fontSize: `${settings.fontSize}px` } : {}}
     >
       {song.isPdf && song.pdfUrl ? (
-        <div className="w-full h-[80vh] overflow-y-auto bg-gray-100 dark:bg-gray-900 rounded-3xl flex justify-center">
+        <div ref={scrollRef} className="w-full h-[80vh] overflow-y-auto bg-gray-100 dark:bg-gray-900 rounded-3xl flex justify-center">
           <Document
             file={song.pdfUrl}
             onLoadSuccess={({ numPages }) => {

@@ -10,6 +10,7 @@ import { generateSongPdf } from '../services/pdfGenerator';
 import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import { calculateLinesPer10Seconds } from '../utils/scrollUtils';
 
 // Set up pdf.js worker.
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -33,6 +34,10 @@ interface SongViewerProps {
   user?: User;
   setlists?: SetList[];
   onSaveSetlist?: (setlist: SetList) => void;
+  scrollContainerRef?: React.RefObject<HTMLDivElement>;
+  isScrolling: boolean;
+  onToggleScroll: () => void;
+  scrollSpeedValue: number;
 }
 
 const CHROMATIC_SCALE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -42,7 +47,9 @@ const YOUTUBE_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|e
 const SongViewer: React.FC<SongViewerProps> = ({ 
   song, settings, onUpdateSettings, transpose, onTranspose,
   activeSetlist, activeSetlistIndex = 0, onNextSong, onPrevSong, onSetlistJump, onExitSetlist, allSongs, localShowChords, onSetLocalShowChords,
-  onUpdateSong, user, setlists, onSaveSetlist
+  onUpdateSong, user, setlists, onSaveSetlist,
+  scrollContainerRef,
+  isScrolling, onToggleScroll, scrollSpeedValue
 }) => {
   const [hudOpen, setHudOpen] = useState(false);
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
@@ -52,6 +59,10 @@ const SongViewer: React.FC<SongViewerProps> = ({
   const [brokenLinkIds, setBrokenLinkIds] = useState<string[]>([]);
   const [showCopyFeedback, setShowCopyFeedback] = useState(false);
   const hudRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll state
+  const pdfContainerRef = useRef<HTMLDivElement>(null!);
+
   const currentChoice = activeSetlist?.choices?.[activeSetlistIndex];
   const displayTempo = currentChoice?.tempo || song.tempo;
   
@@ -61,6 +72,71 @@ const SongViewer: React.FC<SongViewerProps> = ({
     // Close YouTube modal when song changes
     setIsYouTubeModalOpen(false);
   }, [song.id]);
+
+  // Keyboard shortcut for scrolling (Space bar)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault(); // Prevent default page scroll
+        onToggleScroll();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onToggleScroll]);
+
+  // Double tap to toggle scroll logic
+  const lastTapRef = useRef(0);
+  const handleTouchStart = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      onToggleScroll();
+    }
+    lastTapRef.current = now;
+  };
+
+  // Auto-scroll animation loop
+  useEffect(() => {
+    let lastTime = 0;
+    let animationFrameId: number;
+    let scrollRemainder = 0;
+
+    // Calculate pixels per second based on the new "lines per second" logic
+    const linesPer10Sec = calculateLinesPer10Seconds(scrollSpeedValue);
+    const linesPerSec = linesPer10Sec / 10;
+    
+    // From Tailwind's theme, `leading-tight` is 1.25. This is a good approximation for a "line" of text.
+    const lineHeight = settings.fontSize * 1.25;
+    const pixelsPerSecond = linesPerSec * lineHeight;
+
+    const animate = (time: number) => {
+      if (!lastTime) lastTime = time;
+      const deltaTime = time - lastTime;
+      
+      if (deltaTime >= 16) { // Cap at ~60fps logic
+        const target = song.isPdf ? pdfContainerRef.current : scrollContainerRef?.current;
+        if (target) {
+          const pixelsToScroll = (pixelsPerSecond * deltaTime) / 1000;
+          scrollRemainder += pixelsToScroll;
+
+          // Accumulate fractional pixels and only apply when we have a whole pixel to move
+          if (Math.abs(scrollRemainder) >= 1) {
+            const pixelsToApply = Math.floor(scrollRemainder);
+            target.scrollTop += pixelsToApply;
+            scrollRemainder -= pixelsToApply;
+          }
+        }
+        lastTime = time;
+      }
+      
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    if (isScrolling) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isScrolling, scrollSpeedValue, song.isPdf, scrollContainerRef, settings.fontSize]);
 
   const youTubeVideoIds = useMemo(() => {
     const ids = new Set<string>();
@@ -182,6 +258,9 @@ const SongViewer: React.FC<SongViewerProps> = ({
           >
             <span>By {song.authors || 'Unknown'}</span>
             <div className="flex items-center gap-2 border-l border-gray-300 dark:border-gray-600 pl-2 ml-2">
+              <div 
+                className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}
+              ></div>
               <input
                 type="number"
                 min={0}
@@ -215,9 +294,6 @@ const SongViewer: React.FC<SongViewerProps> = ({
               >
                 <i className="fa-solid fa-music text-[10px]"></i>
               </button>
-              <div 
-                className={`w-2 h-2 rounded-full transition-all duration-75 ${beatFlash ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-150' : 'bg-gray-300 dark:bg-gray-600'}`}
-              ></div>
               <button
                 onClick={handleCopyLink}
                 className={`ml-2 w-7 h-7 flex items-center justify-center rounded-full transition-colors ${showCopyFeedback ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' : 'text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
@@ -225,6 +301,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
               >
                 {showCopyFeedback ? <i className="fa-solid fa-check text-sm"></i> : <i className="fa-solid fa-link text-sm"></i>}
               </button>
+              
               {user && setlists && onSaveSetlist && (
                 <button
                   onClick={() => setIsAddToSetlistModalOpen(true)}
@@ -401,7 +478,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
         )}
       </header>
       
-      <div id="printable-song-content">
+      <div id="printable-song-content" onTouchStart={handleTouchStart}>
         <div className="print-only">
           <h1 style={{ fontSize: '20pt', fontWeight: 'bold', color: 'black', marginBottom: '0.25rem' }}>{song.title}</h1>
           <h2 style={{ fontSize: '12pt', fontStyle: 'italic', color: 'black', marginBottom: '1rem' }}>By {song.authors || 'Unknown'}</h2>
@@ -409,6 +486,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
         <LyricsRenderer 
           song={song} 
           settings={{ ...settings, showChords: localShowChords }}
+          pdfContainerRef={pdfContainerRef}
           transpose={transpose} 
         />
       </div>

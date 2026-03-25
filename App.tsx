@@ -158,6 +158,9 @@ const App: React.FC = () => {
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false); // Kept in App.tsx
   const [selectedIndex, setSelectedIndex] = useState(-1); // Kept in App.tsx
   const [pinnedSearchQuery, setPinnedSearchQuery] = useState<string>('');
+  // Auto-scroll state lifted from SongViewer
+  const [isAutoScrolling, setIsAutoScrolling] = useState(false); // Toggles scrolling on/off
+  const [scrollSpeedValue, setScrollSpeedValue] = useState(50); // Represents slider value from 0-100
 
   const recentSongs = useMemo(() => {
     return [...allSongs]
@@ -336,6 +339,18 @@ const App: React.FC = () => {
     setSelectedIndex(-1);
   }, [searchQuery, cameFromAdminSongSearch, setCameFromAdminSongSearch]);
 
+  // Reset scroll position when current song changes
+  useEffect(() => {
+    if (view === 'SONG_VIEW') {
+      scrollContainerRef.current?.scrollTo(0, 0);
+    }
+  }, [currentSong?.id, view]);
+
+  // Reset auto-scroll when song changes
+  useEffect(() => {
+    setIsAutoScrolling(false);
+  }, [currentSong?.id]);
+
   const handleUserSongSelect = async (songId: string) => { // already async
     setCameFromAdminSongSearch(false); // When a song is selected, we are done with the admin-initiated search.
     if (activeSetlist) {
@@ -372,7 +387,7 @@ const App: React.FC = () => {
     }
   };
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null!);
 
   const scrollToTop = () => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1011,11 +1026,19 @@ const App: React.FC = () => {
               user={user}
               setlists={setlists}
               onSaveSetlist={saveSetlist}
+              scrollContainerRef={scrollContainerRef}
+              isScrolling={isAutoScrolling}
+              onToggleScroll={() => setIsAutoScrolling(prev => !prev)}
+              scrollSpeedValue={scrollSpeedValue}
             />
             <SongNavigator 
               sectionLabels={sectionLabels}
               onScrollToTop={scrollToTop}
               onScrollToLabel={scrollToLabel}
+              isScrolling={isAutoScrolling}
+              onToggleScroll={() => setIsAutoScrolling(prev => !prev)}
+              scrollSpeedValue={scrollSpeedValue}
+              onScrollSpeedChange={setScrollSpeedValue}
             />
           </>
         )}
