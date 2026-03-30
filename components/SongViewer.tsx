@@ -163,7 +163,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
 
   useEffect(() => {
     resetMetronome();
-  }, [song.id, activeSetlistIndex]);
+  }, [song.id, activeSetlistIndex, activeSetlist]);
 
   useEffect(() => {
     if (!hudOpen) return;

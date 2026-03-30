@@ -12,8 +12,12 @@ interface SetlistManagerProps {
   currentSong?: Song;
   onSave: (setlist: SetList) => void;
   onArchive: (id: string) => void;
+  onArchiveSetlists?: (ids: string[]) => void;
+  onEditSetlists?: (ids: string[]) => void;
   onPlay: (setlist: SetList) => void;
   onClose: (updatedSetlist?: SetList) => void;
+  batchCount?: number;
+  onQuitBatch?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   initialEditingId?: string | null;
   initialSearchQuery?: string;
@@ -39,7 +43,7 @@ const getFriendlyDuration = (start: number, end: number) => {
 type SortKey = 'name' | 'updatedAt' | 'lastUsedAt';
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  user, setlists, allSongs, currentSong, onSave, onArchive, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = ''
+  user, setlists, allSongs, currentSong, onSave, onArchive, onArchiveSetlists, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = '', batchCount, onQuitBatch, onEditSetlists
 }) => {
   const [editingId, setEditingId] = useState<string | null>(initialEditingId || null);
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
@@ -47,7 +51,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [showArchived, setShowArchived] = useState(false);
-  const [compareListIds, setCompareListIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
 
   // Fetch owner names for setlists
@@ -83,6 +87,11 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
       setEditingId('new');
     }
   };
+
+  // Synchronize internal editing state with parent changes (for batch progression)
+  useEffect(() => {
+    setEditingId(initialEditingId || null);
+  }, [initialEditingId]);
 
   const handleSave = async (name: string, choices: SongChoice[], keepOpen: boolean = false) => {
     const isNew = editingId === 'new';
@@ -129,22 +138,26 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     onSave(newSetlist);
   };
 
-  const handleSelectForCompare = (id: string) => {
-    setCompareListIds(prev => {
+  const handleSelect = (id: string) => {
+    setSelectedIds(prev => {
       const newSelection = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
-      // Allow only two selections
-      if (newSelection.length > 2) {
-        return [newSelection[1], newSelection[2]];
-      }
       return newSelection;
     });
+  };
+
+  const handleSelectAll = (list: SetList[]) => {
+    if (selectedIds.length === list.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(list.map(s => s.id));
+    }
   };
 
   const handleSaveCompare = (listA: SetList, listB: SetList) => {
     onSave(listA);
     onSave(listB);
     setIsComparing(false);
-    setCompareListIds([]);
+    setSelectedIds([]);
   };
 
   const handleCancelCompare = () => {
@@ -211,14 +224,16 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
             setEditingId(null);
           }
         }}
+        batchCount={batchCount}
+        onQuitBatch={onQuitBatch}
         onDirtyChange={onDirtyChange}
       />
     );
   }
 
-  if (isComparing && compareListIds.length === 2) {
-    const listA = setlists.find(s => s.id === compareListIds[0]);
-    const listB = setlists.find(s => s.id === compareListIds[1]);
+  if (isComparing && selectedIds.length === 2) {
+    const listA = setlists.find(s => s.id === selectedIds[0]);
+    const listB = setlists.find(s => s.id === selectedIds[1]);
     
     if (listA && listB) {
       return (
@@ -286,7 +301,15 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400 font-semibold border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-4 py-3 w-12"></th>
+                <th className="px-4 py-3 w-12 text-center">
+                  <input 
+                    type="checkbox"
+                    title="Select All"
+                    className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                    checked={list.length > 0 && selectedIds.length === list.length}
+                    onChange={() => handleSelectAll(list)}
+                  />
+                </th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3 w-24 text-center">Songs</th>
                 <th className="px-4 py-3 w-32">Updated</th>
@@ -310,10 +333,10 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                   return (
                     <tr key={setlist.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group ${setlist.isArchived ? 'bg-yellow-50/50 dark:bg-yellow-900/10 opacity-70' : ''}`}>
                       <td className="px-4 py-3 text-center">
-                        <input title="Select for Compare"
+                        <input title="Select"
                           type="checkbox"
-                          checked={compareListIds.includes(setlist.id)}
-                          onChange={() => handleSelectForCompare(setlist.id)}
+                          checked={selectedIds.includes(setlist.id)}
+                          onChange={() => handleSelect(setlist.id)}
                           className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
                         />
                       </td>
@@ -357,7 +380,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   );
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-6 pb-24">
       <div className="flex items-center justify-between gap-4 mb-6">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex-shrink-0">Setlists Available</h2>
         
@@ -382,16 +405,6 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
           <span>Show Archived</span>
         </label>
 
-        {compareListIds.length > 0 && (
-          <button
-            onClick={() => setIsComparing(true)}
-            disabled={compareListIds.length !== 2}
-            className="px-4 py-2 bg-yellow-500 text-white rounded-lg font-bold hover:bg-yellow-600 shadow-lg shadow-yellow-200 dark:shadow-none flex items-center space-x-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <i className="fa-solid fa-right-left"></i>
-            <span>Compare ({compareListIds.length}/2)</span>
-          </button>
-        )}
         <div className="flex space-x-3 flex-shrink-0">
           <button onClick={() => onClose()} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Back</button>
           <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none flex items-center space-x-2 transition-all">
@@ -405,6 +418,37 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
       
       {/* Only show community setlists if there are any */}
       {secondaryList.length > 0 && renderTable(secondaryList, "Community Setlists", true)}
+
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-3 flex items-center gap-3 animate-slideInUp">
+          <div className="px-3 border-r border-gray-200 dark:border-gray-700">
+            <span className="text-sm font-bold text-gray-900 dark:text-white">{selectedIds.length} Selected</span>
+          </div>
+          {onEditSetlists && (
+            <button 
+              onClick={() => onEditSetlists(selectedIds)}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-all flex items-center gap-2"
+            >
+              <i className="fa-solid fa-pen-to-square"></i> Edit
+            </button>
+          )}
+          {onArchiveSetlists && (
+            <button 
+              onClick={() => onArchiveSetlists(selectedIds)}
+              className="px-4 py-2 bg-amber-600 text-white text-sm font-bold rounded-xl hover:bg-amber-700 transition-all flex items-center gap-2"
+            >
+              <i className="fa-solid fa-archive"></i> Archive
+            </button>
+          )}
+          <button 
+            onClick={() => setIsComparing(true)}
+            disabled={selectedIds.length !== 2}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i className="fa-solid fa-right-left"></i> Compare
+          </button>
+        </div>
+      )}
     </div>
   );
 };

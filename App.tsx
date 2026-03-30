@@ -125,6 +125,8 @@ const App: React.FC = () => {
 
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
   const [hasUnsavedChanges, _setHasUnsavedChanges] = useState(false);
+  const [batchEditQueue, setBatchEditQueue] = useState<Song[]>([]);
+  const [batchSetlistEditQueue, setBatchSetlistEditQueue] = useState<string[]>([]);
   // Use a Ref for the navigation guard to prevent stale closure issues during Save & Exit
   const hasUnsavedChangesRef = useRef(false);
 
@@ -558,6 +560,14 @@ const App: React.FC = () => {
       setSongToEdit(savedSong);
     } else {
       setHasUnsavedChanges(false);
+      
+      if (batchEditQueue.length > 0) {
+        const [next, ...remaining] = batchEditQueue;
+        setBatchEditQueue(remaining);
+        setSongToEdit(next);
+        return;
+      }
+
       if (isNew && activeSetlist) {
         setNewSongForSetlist(savedSong);
         setSongToEdit(undefined);
@@ -636,6 +646,74 @@ const App: React.FC = () => {
         handleNavigation('SONG_VIEW');
       }
     }
+  };
+
+  const handleArchiveSongs = async (songsToArchive: Song[]) => {
+    if (songsToArchive.length === 0) return;
+    
+    const confirmMessage = songsToArchive.length === 1 
+      ? `Are you sure you want to archive "${songsToArchive[0].title}"?`
+      : `Are you sure you want to archive these ${songsToArchive.length} songs?`;
+
+    if (window.confirm(confirmMessage)) {
+      setIsSyncing(true);
+      try {
+        let affectedActiveSetlist = false;
+        
+        for (const song of songsToArchive) {
+          await saveSong({ ...song, isArchived: true });
+          
+          const containing = setlists.filter(sl => !sl.isArchived && sl.choices.some(c => c.songId === song.id));
+          for (const sl of containing) {
+            const newChoices = sl.choices.filter(c => c.songId !== song.id);
+            const updated = { ...sl, choices: newChoices, isArchived: sl.isArchived || newChoices.length === 0 };
+            await saveSetlist(updated);
+            if (activeSetlist && sl.id === activeSetlist.id) affectedActiveSetlist = true;
+          }
+        }
+        
+        if (affectedActiveSetlist) exitSetlist();
+
+        await refreshSongs();
+        await refreshSetlists();
+
+        // After batch archive, ensure the current song (what the user sees when clicking 'Back')
+        // is not one of the songs just archived.
+        const archivedIds = new Set(songsToArchive.map(s => s.id));
+        if (currentSong && archivedIds.has(currentSong.id)) {
+          const history = user ? dbService.getRecentCache(user.id) : [];
+          // Find the most recent song in history that was not just archived and is still active
+          const fallback = history.find(h => 
+            !archivedIds.has(h.id) && allSongs.find(s => s.id === h.id && !s.isArchived)
+          );
+          
+          if (fallback) {
+            await selectSong(fallback.id);
+          } else {
+            // If no valid history, find the first available song in the library
+            const firstAvailable = allSongs.find(s => !s.isArchived && !archivedIds.has(s.id));
+            if (firstAvailable) await selectSong(firstAvailable.id);
+            else selectSong(''); // Clear current song if library is empty
+          }
+        }
+
+        setShowUpdateToast(true);
+      } catch (err) {
+        console.error("Batch archive failed", err);
+        alert("An error occurred during batch archiving.");
+      } finally {
+        setIsSyncing(false);
+      }
+    }
+  };
+
+  const handleEditSongs = (songs: Song[]) => {
+    if (songs.length === 0) return;
+    const [first, ...rest] = songs;
+    setBatchEditQueue(rest);
+    setSongToEdit(first);
+    setHasUnsavedChanges(false);
+    setView('SONG_FORM');
   };
 
   const handleArchiveSong = async () => {
@@ -1097,11 +1175,23 @@ const App: React.FC = () => {
           <SongForm 
             song={songToEdit}
             onSave={handleSaveSong}
-            onCancel={() => {
+            batchCount={batchEditQueue.length}
+            onQuitBatch={() => {
+              setBatchEditQueue([]);
               setView('SONG_VIEW');
               setSongToEdit(undefined);
-              clearAddition();
-            }} 
+            }}
+            onCancel={() => {
+              if (batchEditQueue.length > 0) {
+                const [next, ...remaining] = batchEditQueue;
+                setBatchEditQueue(remaining);
+                setSongToEdit(next);
+              } else {
+                setView('SONG_VIEW');
+                setSongToEdit(undefined);
+                clearAddition();
+              }
+            }}
           />
         )}
         {view === 'RECENT_SONGS' && (
@@ -1114,6 +1204,8 @@ const App: React.FC = () => {
             }}
             onArchiveSong={performArchiveSong}
             onBack={() => setView('SONG_VIEW')}
+            onArchiveSongs={handleArchiveSongs}
+            onEditSongs={handleEditSongs}
           />
         )}
         {view === 'SETLIST_MANAGER' && (
@@ -1122,38 +1214,83 @@ const App: React.FC = () => {
             setlists={setlists}
             allSongs={allSongs.filter(s => !s.isArchived)}
             currentSong={currentSong ?? undefined}
-            onSave={saveSetlist}
+            onSave={async (updatedSetlist: SetList) => {
+              await saveSetlist(updatedSetlist);
+              
+              // Refresh the active setlist session immediately if we edited the list currently in play.
+              // This ensures the HUD reflects changes (like reordering or renaming) even if the editor stays open.
+              if (activeSetlist && updatedSetlist.id === activeSetlist.id) {
+                const songIdToFind = preEditSongIdRef.current || currentSong?.id;
+                const newIndex = updatedSetlist.choices.findIndex(c => c.songId === songIdToFind);
+                
+                playSetlist(updatedSetlist, newIndex !== -1 ? newIndex : 0);
+                setShowUpdateToast(true);
+              }
+
+              // Sequential editing: If we just saved and exited (keepOpen was false), 
+              // we don't handle progression here; it's handled in the onClose callback
+              // triggered by SetlistManager's internal handleSave logic.
+            }}
             onArchive={handleArchiveSetlist}
+            onArchiveSetlists={async (ids: string[]) => {
+              if (ids.length === 0) return;
+              const confirmMessage = ids.length === 1 
+                ? "Are you sure you want to archive this setlist?"
+                : `Are you sure you want to archive these ${ids.length} setlists?`;
+              
+              if (window.confirm(confirmMessage)) {
+                setIsSyncing(true);
+                try {
+                  for (const id of ids) {
+                    const sl = setlists.find(s => s.id === id);
+                    if (sl) {
+                      if (activeSetlist?.id === id) exitSetlist();
+                      await saveSetlist({ ...sl, isArchived: true });
+                    }
+                  }
+                  await refreshSetlists();
+                  setShowUpdateToast(true);
+                } finally {
+                  setIsSyncing(false);
+                }
+              }
+            }}
+            onEditSetlists={(ids: string[]) => {
+              if (ids.length === 0) return;
+              const [first, ...rest] = ids;
+              setBatchSetlistEditQueue(rest);
+              setTargetSetlistId(first);
+              setView('SETLIST_MANAGER');
+            }}
             onPlay={handlePlaySetlist}
+            batchCount={batchSetlistEditQueue.length}
+            onQuitBatch={() => {
+              setBatchSetlistEditQueue([]);
+              setTargetSetlistId(null);
+              setView('SONG_VIEW');
+            }}
             onClose={(updatedSetlist?: SetList) => {
               // Clear the dirty flag immediately
               setHasUnsavedChanges(false);
               
-              // Use setTimeout to ensure the state update for hasUnsavedChanges has processed
-              // before playSetlist (which triggers handleSelectSong's guard) is called.
-              setTimeout(() => {
-                if (targetSetlistId && activeSetlist && targetSetlistId === activeSetlist.id) {
-                  const listToUse = updatedSetlist || activeSetlist;
-                  const songIdToFind = preEditSongIdRef.current;
-                  
-                  if (songIdToFind) {
-                    const newIndex = listToUse.choices.findIndex(c => c.songId === songIdToFind);
-                    playSetlist(listToUse, newIndex !== -1 ? newIndex : 0);
+              if (batchSetlistEditQueue.length > 0) {
+                const [next, ...remaining] = batchSetlistEditQueue;
+                setBatchSetlistEditQueue(remaining);
+                setTargetSetlistId(next);
+              } else {
+                setTimeout(() => {
+                  if (adminSetlistFilter) {
+                    setView('ADMIN_DASHBOARD');
+                  } else {
+                    setView('SONG_VIEW');
                   }
 
-                  if (updatedSetlist) setShowUpdateToast(true);
-                }
-
-                if (adminSetlistFilter) {
-                  setView('ADMIN_DASHBOARD');
-                } else {
-                  setView('SONG_VIEW');
-                }
-              }, 0);
-
-              setTargetSetlistId(null);
-              setAdminSetlistFilter('');
-              preEditSongIdRef.current = null;
+                  // Clear temporary editor context
+                  setTargetSetlistId(null);
+                  setAdminSetlistFilter('');
+                  preEditSongIdRef.current = null;
+                }, 0);
+              }
             }}
             onDirtyChange={setHasUnsavedChanges}
             initialEditingId={targetSetlistId}
@@ -1404,9 +1541,10 @@ const App: React.FC = () => {
               <div className="overflow-y-auto h-full pb-12">
                 {recentlyViewed.length > 0 ? recentlyViewed.map(cachedSong => {
                   // Cross-reference with live allSongs to get current archived status
+                  // This ensures the menu reflects changes made during the current session
                   const liveSong = allSongs.find(s => s.id === cachedSong.id);
+                  const isArchived = liveSong ? !!liveSong.isArchived : true;
                   const song = liveSong || cachedSong;
-                  const isArchived = !!song.isArchived;
 
                   return (
                     <button 

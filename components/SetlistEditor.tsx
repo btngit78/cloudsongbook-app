@@ -11,11 +11,13 @@ interface SetlistEditorProps {
   currentSong?: Song;
   onSave: (name: string, choices: SongChoice[], keepOpen?: boolean) => Promise<void> | void;
   onCancel: () => void;
+  batchCount?: number;
+  onQuitBatch?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
 }
 
 const SetlistEditor: React.FC<SetlistEditorProps> = ({ 
-  initialSetlist, allSongs, currentSong, onSave, onCancel, onDirtyChange 
+  initialSetlist, allSongs, currentSong, onSave, onCancel, onDirtyChange, batchCount, onQuitBatch
 }) => {
   const [name, setName] = useState(initialSetlist?.name || '');
   const [choices, setChoices] = useState<SongChoice[]>(initialSetlist?.choices || []);
@@ -514,11 +516,19 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
           {initialSetlist ? 'Edit Setlist' : 'New Setlist'}
         </h2>
         <div className="flex space-x-2">
+          {batchCount !== undefined && batchCount > 0 && onQuitBatch && (
+            <button
+              onClick={onQuitBatch}
+              className="px-4 py-2 text-red-600 dark:text-red-400 font-bold border border-red-300 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            >
+              Quit Batch
+            </button>
+          )}
           <button 
             onClick={onCancel} 
             className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            {isDirty ? 'Cancel' : 'Back'}
+            {batchCount && batchCount > 0 ? 'Skip' : (isDirty ? 'Cancel' : 'Back')}
           </button>
           <button 
             onClick={() => handleSave(true)} 
@@ -536,7 +546,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
               !name.trim() || !isDirty || isSaving ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {isSaving ? 'Saving...' : 'Save & Exit'}
+            {isSaving ? 'Saving...' : (batchCount && batchCount > 0 ? `Save & Next (${batchCount})` : 'Save & Exit')}
           </button>
           <button 
             onClick={handleExport}

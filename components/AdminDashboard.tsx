@@ -44,6 +44,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
   const [isRestoringSettings, setIsRestoringSettings] = useState(false);
   const settingsFileInputRef = useRef<HTMLInputElement>(null);
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  // Batch Selection State
+  const [selectedSongs, setSelectedSongs] = useState<Set<string>>(new Set());
+  const [selectedSetlists, setSelectedSetlists] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setSelectedSongs(new Set());
+    setSelectedSetlists(new Set());
+  }, [activeTab]);
+
   const userContentCounts = useMemo(() => {
     const counts: Record<string, { songs: number, setlists: number }> = {};
     if (!allSongs || !allSetlists) return counts;
@@ -67,6 +77,77 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
 
   const handleUnarchiveSong = (song: Song) => onSaveSong({ ...song, isArchived: false });
   const handleUnarchiveSetlist = (setlist: SetList) => onSaveSetlist({ ...setlist, isArchived: false });
+
+  // Batch Operations
+  const handleBatchUnarchiveSongs = async () => {
+    const songs = archivedSongs.filter(s => selectedSongs.has(s.id));
+    if (songs.length === 0) return;
+    if (window.confirm(`Are you sure you want to unarchive ${songs.length} songs?`)) {
+      setIsSyncing(true);
+      for (const song of songs) {
+        await onSaveSong({ ...song, isArchived: false });
+      }
+      setSelectedSongs(new Set());
+      setIsSyncing(false);
+    }
+  };
+
+  const handleBatchDeleteSongs = async () => {
+    const songs = archivedSongs.filter(s => selectedSongs.has(s.id));
+    if (songs.length === 0) return;
+    if (window.confirm(`PERMANENTLY DELETE ${songs.length} songs? This action is irreversible.`)) {
+      setIsSyncing(true);
+      for (const song of songs) {
+        await onDeleteSong(song);
+      }
+      setSelectedSongs(new Set());
+      setIsSyncing(false);
+    }
+  };
+
+  const handleBatchUnarchiveSetlists = async () => {
+    const lists = archivedSetlists.filter(s => selectedSetlists.has(s.id));
+    if (lists.length === 0) return;
+    if (window.confirm(`Are you sure you want to unarchive ${lists.length} setlists?`)) {
+      setIsSyncing(true);
+      for (const list of lists) {
+        await onSaveSetlist({ ...list, isArchived: false });
+      }
+      setSelectedSetlists(new Set());
+      setIsSyncing(false);
+    }
+  };
+
+  const handleBatchDeleteSetlists = async () => {
+    const ids = Array.from(selectedSetlists);
+    if (ids.length === 0) return;
+    if (window.confirm(`PERMANENTLY DELETE ${ids.length} setlists? This action is irreversible.`)) {
+      setIsSyncing(true);
+      for (const id of ids) {
+        await onDeleteSetlist(id);
+      }
+      setSelectedSetlists(new Set());
+      setIsSyncing(false);
+    }
+  };
+
+  const toggleSongSelection = (id: string) => {
+    setSelectedSongs(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSetlistSelection = (id: string) => {
+    setSelectedSetlists(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
 
   useEffect(() => {
@@ -752,7 +833,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
       )}
 
       {activeTab === 'archive' && (
-        <div className="space-y-8">
+        <div className="space-y-8 pb-24">
           {/* Archived Songs */}
           <div>
             <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-3">Archived Songs ({archivedSongs.length})</h3>
@@ -761,6 +842,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
+                      <th className="px-6 py-3 w-12 text-center">
+                        <input title="Select All Songs"
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                          checked={archivedSongs.length > 0 && selectedSongs.size === archivedSongs.length}
+                          onChange={() => setSelectedSongs(selectedSongs.size === archivedSongs.length ? new Set() : new Set(archivedSongs.map(s => s.id)))}
+                        />
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Song</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Archived On</th>
                       <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
@@ -768,7 +857,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {archivedSongs.map(song => (
-                      <tr key={song.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      <tr key={song.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${selectedSongs.has(song.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
+                        <td className="px-6 py-4 text-center">
+                          <input title="Select Song"
+                            type="checkbox"
+                            checked={selectedSongs.has(song.id)}
+                            onChange={() => toggleSongSelection(song.id)}
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                          />
+                        </td>
                         <td className="px-6 py-4">
                           <div className="font-medium text-gray-900 dark:text-gray-100">{song.title}</div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">{song.authors}</div>
@@ -806,6 +903,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
+                      <th className="px-6 py-3 w-12 text-center">
+                        <input title="Select All Setlists"
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                          checked={archivedSetlists.length > 0 && selectedSetlists.size === archivedSetlists.length}
+                          onChange={() => setSelectedSetlists(selectedSetlists.size === archivedSetlists.length ? new Set() : new Set(archivedSetlists.map(s => s.id)))}
+                        />
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Setlist</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Archived On</th>
                       <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
@@ -813,7 +918,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {archivedSetlists.map(setlist => (
-                      <tr key={setlist.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      <tr key={setlist.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${selectedSetlists.has(setlist.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
+                        <td className="px-6 py-4 text-center">
+                          <input title="Select Setlist"
+                            type="checkbox"
+                            checked={selectedSetlists.has(setlist.id)}
+                            onChange={() => toggleSetlistSelection(setlist.id)}
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                          />
+                        </td>
                         <td className="px-6 py-4">
                           <div className="font-medium text-gray-900 dark:text-gray-100">{setlist.name}</div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">{setlist.choices.length} songs</div>
@@ -842,6 +955,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onBack, al
               </div>
             </div>
           </div>
+
+          {/* Batch Action Toolbar */}
+          {(selectedSongs.size > 0 || selectedSetlists.size > 0) && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-3 flex items-center gap-3 animate-slideInUp">
+              {selectedSongs.size > 0 && (
+                <div className="flex items-center gap-2 border-r border-gray-200 dark:border-gray-700 pr-3 mr-3 last:border-0 last:mr-0">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">{selectedSongs.size} Songs</span>
+                  <button 
+                    onClick={handleBatchUnarchiveSongs}
+                    disabled={isSyncing}
+                    className="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-xl hover:bg-green-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <i className={`fa-solid ${isSyncing ? 'fa-spinner fa-spin' : 'fa-box-open'}`}></i> Unarchive
+                  </button>
+                  <button 
+                    onClick={handleBatchDeleteSongs}
+                    disabled={isSyncing}
+                    className="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <i className={`fa-solid ${isSyncing ? 'fa-spinner fa-spin' : 'fa-trash-can'}`}></i> Delete
+                  </button>
+                </div>
+              )}
+              {selectedSetlists.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">{selectedSetlists.size} Setlists</span>
+                  <button 
+                    onClick={handleBatchUnarchiveSetlists}
+                    disabled={isSyncing}
+                    className="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-xl hover:bg-green-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <i className={`fa-solid ${isSyncing ? 'fa-spinner fa-spin' : 'fa-box-open'}`}></i> Unarchive
+                  </button>
+                  <button 
+                    onClick={handleBatchDeleteSetlists}
+                    disabled={isSyncing}
+                    className="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <i className={`fa-solid ${isSyncing ? 'fa-spinner fa-spin' : 'fa-trash-can'}`}></i> Delete
+                  </button>
+                </div>
+              )}
+              <button 
+                onClick={() => { setSelectedSongs(new Set()); setSelectedSetlists(new Set()); }}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                title="Clear Selection"
+              >
+                <i className="fa-solid fa-xmark text-lg"></i>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

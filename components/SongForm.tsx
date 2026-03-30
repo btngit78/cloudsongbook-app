@@ -10,6 +10,8 @@ interface SongFormProps {
   song?: Song;
   onSave: (song: Partial<Song>, keepOpen?: boolean) => void;
   onCancel: () => void;
+  batchCount?: number;
+  onQuitBatch?: () => void;
 }
 
 const LANGUAGES = ['English', 'Vietnamese', 'French', 'Spanish'];
@@ -26,7 +28,7 @@ const DEFAULT_FORM_DATA: Partial<Song> = {
   pdfUrl: ''
 };
 
-const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
+const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount, onQuitBatch }) => {
   const [formData, setFormData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
   const [initialData, setInitialData] = useState<Partial<Song>>(DEFAULT_FORM_DATA);
   const [isDirty, setIsDirty] = useState(false);
@@ -144,13 +146,22 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
           {song ? 'Edit Song' : 'Add New Song'}
         </h2>
-        <div className="flex space-x-3">
+        <div className="flex items-center space-x-3">
+          {batchCount !== undefined && batchCount > 0 && onQuitBatch && (
+            <button
+              type="button"
+              onClick={onQuitBatch}
+              className="px-4 py-2 text-red-600 dark:text-red-400 font-bold border border-red-300 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            >
+              Quit Batch
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCancel}
             className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            {isDirty ? 'Cancel' : 'Back'}
+            {batchCount && batchCount > 0 ? 'Skip' : (isDirty ? 'Cancel' : 'Back')}
           </button>
           <button
             type="button"
@@ -170,7 +181,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel }) => {
               !formData.title?.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            Save & Exit
+            {batchCount && batchCount > 0 ? `Save & Next (${batchCount})` : 'Save & Exit'}
           </button>
         </div>
       </div>

@@ -27,26 +27,27 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => P
     if (user) dbService.saveSetlist(setlist);
   }, [user]);
 
+  const exitSetlist = useCallback(() => {
+    setActiveSetlist(null);
+    setActiveSetlistIndex(0);
+  }, []);
+
   const deleteSetlist = useCallback((id: string) => {
     setSetlists(currentSetlists => currentSetlists.filter(s => s.id !== id));
     dbService.deleteSetlist(id);
-    setActiveSetlist(currentActive => {
-      if (currentActive?.id === id) {
-          setActiveSetlistIndex(0);
-          return null;
-      }
-      return currentActive;
-    });
-  }, []);
+    if (activeSetlist?.id === id) exitSetlist();
+  }, [activeSetlist?.id, exitSetlist]);
 
   const playSetlist = useCallback(async (setlist: SetList, startIndex: number = 0) => {
-    setActiveSetlist(setlist);
-    setActiveSetlistIndex(startIndex);
-    if (setlist.choices && setlist.choices.length > startIndex) {
-      await selectSong(setlist.choices[startIndex].songId);
-    }
-    // Update lastUsedAt
+    // Create the updated object first so both the active state 
+    // and the persisted global list share the same data (including lastUsedAt)
     const updated = { ...setlist, lastUsedAt: Date.now() };
+    
+    setActiveSetlist(updated);
+    setActiveSetlistIndex(startIndex);
+    if (updated.choices && updated.choices.length > startIndex) {
+      await selectSong(updated.choices[startIndex].songId);
+    }
     saveSetlist(updated);
   }, [selectSong, saveSetlist]);
 
@@ -63,11 +64,6 @@ export const useSetlists = (user: User | null, selectSong: (songId: string) => P
       await selectSong(activeSetlist.choices[newIndex].songId);
     }
   }, [activeSetlist, activeSetlistIndex, selectSong]);
-
-  const exitSetlist = useCallback(() => {
-    setActiveSetlist(null);
-    setActiveSetlistIndex(0);
-  }, []);
 
   const refreshSetlists = useCallback(async () => {
     const data = await dbService.getSetlists();
