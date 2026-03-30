@@ -13,7 +13,7 @@ interface SetlistManagerProps {
   onSave: (setlist: SetList) => void;
   onArchive: (id: string) => void;
   onPlay: (setlist: SetList) => void;
-  onClose: () => void;
+  onClose: (updatedSetlist?: SetList) => void;
   onDirtyChange?: (isDirty: boolean) => void;
   initialEditingId?: string | null;
   initialSearchQuery?: string;
@@ -84,7 +84,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     }
   };
 
-  const handleSave = (name: string, choices: SongChoice[], keepOpen: boolean = false) => {
+  const handleSave = async (name: string, choices: SongChoice[], keepOpen: boolean = false) => {
     const isNew = editingId === 'new';
     const targetId = isNew ? Date.now().toString() : editingId!;
     const originalSetlist = isNew ? undefined : setlists.find(s => s.id === editingId);
@@ -99,14 +99,20 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
       lastUsedAt: originalSetlist?.lastUsedAt || 0
     };
 
-    onSave(newSetlist);
+    await onSave(newSetlist);
+    onDirtyChange?.(false); // Clear dirty flag immediately to allow navigation
     
     if (keepOpen) {
       if (isNew) {
         setEditingId(targetId);
       }
     } else {
-      setEditingId(null);
+      // If we entered manager via "Edit Current Set", go back to song view immediately
+      if (initialEditingId === editingId) {
+        onClose(newSetlist);
+      } else {
+        setEditingId(null);
+      }
     }
   };
 
@@ -198,7 +204,13 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
         allSongs={allSongs}
         currentSong={currentSong}
         onSave={handleSave}
-        onCancel={() => setEditingId(null)}
+        onCancel={() => {
+          if (initialEditingId === editingId) {
+            onClose();
+          } else {
+            setEditingId(null);
+          }
+        }}
         onDirtyChange={onDirtyChange}
       />
     );
@@ -381,7 +393,7 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
           </button>
         )}
         <div className="flex space-x-3 flex-shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Back</button>
+          <button onClick={() => onClose()} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Back</button>
           <button onClick={() => startEdit()} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none flex items-center space-x-2 transition-all">
             <i className="fa-solid fa-plus"></i>
             <span>Create New</span>

@@ -3,6 +3,7 @@ import { Song } from '../types';
 
 interface RecentlyViewedSongsViewProps {
   songs: Song[];
+  allSongs: Song[];
   onSelectSong: (id: string) => void;
   onBack: () => void;
   onClear: () => void;
@@ -10,6 +11,7 @@ interface RecentlyViewedSongsViewProps {
 
 const RecentlyViewedSongsView: React.FC<RecentlyViewedSongsViewProps> = ({
   songs,
+  allSongs,
   onSelectSong,
   onBack,
   onClear,
@@ -42,17 +44,30 @@ const RecentlyViewedSongsView: React.FC<RecentlyViewedSongsViewProps> = ({
             <p className="text-sm text-gray-400 mt-2">View a song to add it to this list.</p>
           </div>
         ) : (
-          songs.map(s => (
-            <div key={s.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center hover:shadow-md transition-shadow group">
-              <div className="text-left flex-1 cursor-pointer min-w-0 mr-4" onClick={() => onSelectSong(s.id)}>
-                <p className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{s.title}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{s.authors}</p>
+          songs.map(cachedSong => {
+            const liveSong = allSongs.find(song => song.id === cachedSong.id);
+            const s = liveSong || cachedSong;
+            const isArchived = !!s.isArchived;
+
+            return (
+              <div 
+                key={s.id} 
+                className={`bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex justify-between items-center transition-all group ${
+                  isArchived ? 'bg-gray-50 dark:bg-gray-900/40 opacity-70' : 'hover:shadow-md'
+                }`}
+              >
+                <div className={`text-left flex-1 min-w-0 mr-4 ${isArchived ? 'cursor-not-allowed' : 'cursor-pointer'}`} onClick={() => !isArchived && onSelectSong(s.id)}>
+                  <p className={`font-bold truncate transition-colors ${isArchived ? 'text-gray-400 dark:text-gray-500 italic' : 'text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400'}`}>
+                    {s.title} {isArchived && <span className="text-[10px] font-bold text-amber-600 dark:text-amber-500 ml-1 uppercase">(Archived)</span>}
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{s.authors}</p>
+                </div>
+                <button title="Select Song" onClick={() => !isArchived && onSelectSong(s.id)} disabled={isArchived} className={`p-2 transition-colors ${isArchived ? 'text-gray-300 dark:text-gray-700' : 'text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400'}`}>
+                  <i className="fa-solid fa-chevron-right"></i>
+                </button>
               </div>
-              <button title="Select Song" onClick={() => onSelectSong(s.id)} className="p-2 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400">
-                <i className="fa-solid fa-chevron-right"></i>
-              </button>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Song, SetList, SongChoice } from '../types';
 import { useFilteredSongs } from '../hooks/useSongSearch';
 import { useMetronome } from '../hooks/useMetronome';
+import { normalizeText } from '../utils/searchUtils';
 import { SetlistSongRow } from './SetlistSongRow';
 
 interface SetlistEditorProps {
   initialSetlist?: SetList;
   allSongs: Song[];
   currentSong?: Song;
-  onSave: (name: string, choices: SongChoice[], keepOpen?: boolean) => void;
+  onSave: (name: string, choices: SongChoice[], keepOpen?: boolean) => Promise<void> | void;
   onCancel: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
 }
@@ -20,11 +21,15 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   const [choices, setChoices] = useState<SongChoice[]>(initialSetlist?.choices || []);
   const [inputValue, setInputValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [sortKeys, setSortKeys] = useState<('language' | 'title')[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [initialData, setInitialData] = useState({ name: initialSetlist?.name || '', choices: initialSetlist?.choices || [] });
+  const dragCounter = useRef(0);
+  const [isDraggingOver, setIsDraggingOver] = useState(false); // New state for drag-over visual feedback
   
   // Metronome integration
   const [metronomeIndex, setMetronomeIndex] = useState<number | null>(null);
@@ -66,6 +71,10 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
     if (initialSetlist) {
       setName(initialSetlist.name);
       setChoices(initialSetlist.choices);
+      setInitialData({
+        name: initialSetlist.name,
+        choices: initialSetlist.choices
+      });
     }
   }, [initialSetlist]);
 
@@ -89,6 +98,14 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
   // Filter available songs using smart regex
   const availableSongs = useFilteredSongs(allSongs, searchQuery, 'relevance', 'asc');
+
+  const librarySongs = useMemo(() => {
+    if (searchQuery.trim().length >= 2) return availableSongs;
+    return [...allSongs]
+      .filter(s => !s.isArchived)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, 50);
+  }, [searchQuery, availableSongs, allSongs]);
 
   const existingSongIds = useMemo(() => new Set(choices.map(c => c.songId)), [choices]);
 
@@ -118,7 +135,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
     setChoices(sorted);
   };
 
-  const handleAddSong = (song: Song) => {
+  const handleAddSong = useCallback((song: Song) => {
     if (existingSongIds.has(song.id)) {
 
       // Silently ignore if already present
@@ -133,7 +150,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
       singer: ''
     };
     setChoices([...choices, newChoice]);
-  };
+  }, [choices, existingSongIds]);
 
   const handleAddCurrentSong = () => {
     if (currentSong) {
@@ -151,8 +168,8 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
         style: '',
         singer: ''
       }));
-    if (newChoices.length > 0) {
-      setChoices([...choices, ...newChoices]);
+    if (newChoices.length > 0) { // Use functional update
+      setChoices(prevChoices => [...prevChoices, ...newChoices]);
     }
     setInputValue('');
     setSearchQuery('');
@@ -231,7 +248,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
   const getSong = (id: string) => allSongs.find(s => s.id === id);
 
-  const handleSave = (keepOpen: boolean) => {
+  const handleSave = async (keepOpen: boolean) => {
     const highTempoChoice = choices.find(c => c.tempo && c.tempo > 300);
     if (highTempoChoice) {
       const song = getSong(highTempoChoice.songId);
@@ -239,7 +256,16 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
         return;
       }
     }
-    onSave(name, choices, keepOpen);
+    
+    setIsSaving(true);
+    try {
+      await onSave(name, choices, keepOpen);
+      if (keepOpen) {
+        setInitialData({ name, choices });
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExport = () => {
@@ -328,6 +354,158 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
     closeExportModal();
   };
 
+  // --- Drag and Drop for File Import ---
+  // We handle dragEnter, dragOver, and drop to prevent the browser 
+  // from opening the file in a new tab.
+  const handleDragEnterFile = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Check if it's a file drag to avoid triggering on internal element drags
+    if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+      dragCounter.current++;
+      setIsDraggingOver(true);
+    }
+  }, []);
+
+  const handleDragOverFile = useCallback((e: React.DragEvent) => {
+    // Required to allow the drop event to fire
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragLeaveFile = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+      dragCounter.current--;
+      // Only hide the overlay when the counter returns to zero (actually leaving the container)
+      if (dragCounter.current <= 0) {
+        dragCounter.current = 0;
+        setIsDraggingOver(false);
+      }
+    }
+  }, []);
+
+  const handleDropFile = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    dragCounter.current = 0;
+
+    // Helper function for fuzzy string matching (Levenshtein Distance)
+    const getSimilarity = (s1: string, s2: string) => {
+      const len1 = s1.length;
+      const len2 = s2.length;
+      const matrix: number[][] = [];
+      for (let i = 0; i <= len1; i++) matrix[i] = [i];
+      for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+      for (let i = 1; i <= len1; i++) {
+        for (let j = 1; j <= len2; j++) {
+          const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+          matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+        }
+      }
+      const distance = matrix[len1][len2];
+      const maxLen = Math.max(len1, len2);
+      return maxLen === 0 ? 1 : (maxLen - distance) / maxLen;
+    };
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
+        try {
+          const text = await file.text();
+          const songNames = text.split(/,|\n/).map(name => name.trim()).filter(Boolean);
+          
+          const normalizedAllSongs = new Map<string, Song[]>();
+          allSongs.forEach(s => {
+            const normalizedTitle = normalizeText(s.title);
+            if (!normalizedAllSongs.has(normalizedTitle)) {
+              normalizedAllSongs.set(normalizedTitle, []);
+            }
+            normalizedAllSongs.get(normalizedTitle)?.push(s);
+          });
+
+          const unmatchedSongs: string[] = [];
+          const matchedSongsForImport: { song: Song; isFuzzy: boolean }[] = []; 
+
+          songNames.forEach(inputName => {
+            const normalizedInputName = normalizeText(inputName);
+            const matchedSongs = normalizedAllSongs.get(normalizedInputName);
+            if (matchedSongs && matchedSongs.length > 0) {
+              matchedSongsForImport.push({ song: matchedSongs[0], isFuzzy: false });
+            } else {
+              // Attempt Fuzzy Match
+              let bestMatch: Song | null = null;
+              let maxSimilarity = 0;
+              const FUZZY_THRESHOLD = 0.75; // 75% similarity required to consider it a match
+
+              allSongs.forEach(song => {
+                const similarity = getSimilarity(normalizedInputName, normalizeText(song.title));
+                if (similarity > maxSimilarity) {
+                  maxSimilarity = similarity;
+                  bestMatch = song;
+                }
+              });
+
+              if (bestMatch && maxSimilarity >= FUZZY_THRESHOLD) {
+                matchedSongsForImport.push({ song: bestMatch, isFuzzy: true });
+              } else {
+                unmatchedSongs.push(inputName);
+              }
+            }
+          });
+          
+          // Handle unmatched songs and user decision
+          if (unmatchedSongs.length > 0) {
+            const displayCount = Math.min(unmatchedSongs.length, 10);
+            const message = `Could not find the following song(s) in your library:\n\n${unmatchedSongs.slice(0, displayCount).join('\n')}${unmatchedSongs.length > 10 ? `\n...and ${unmatchedSongs.length - 10} more.` : ''}\n\nDo you want to proceed with importing the matched songs?`;
+            
+            if (!window.confirm(message)) {
+              // User chose to cancel the import entirely
+              return; 
+            }
+          }
+
+          // Proceed with importing only the matched songs if user confirmed or no unmatched songs
+          if (matchedSongsForImport.length > 0) {
+            setChoices(prevChoices => {
+              const currentIds = new Set(prevChoices.map(c => c.songId));
+              const newChoices = matchedSongsForImport
+                .filter(item => !currentIds.has(item.song.id))
+                .map(item => ({
+                  songId: item.song.id,
+                  key: item.song.key,
+                  tempo: item.song.tempo,
+                  style: '',
+                  singer: '',
+                  isFuzzyMatch: item.isFuzzy // Track the fuzzy state
+                }));
+              return [...prevChoices, ...newChoices];
+            });
+          } else if (songNames.length > 0) {
+            // If no matched songs but the file wasn't empty, inform the user.
+            // If unmatchedSongs.length > 0, the user already saw a prompt.
+            // This covers cases where all songs were unmatched, and the user chose to proceed.
+            if (matchedSongsForImport.length === 0 && unmatchedSongs.length === 0) {
+                // This case means the file was empty or only contained blank lines. No alert needed.
+            } else if (matchedSongsForImport.length === 0) {
+                alert("No songs from the file could be matched to your library.");
+            }
+          }
+
+        } catch (error) {
+          console.error("Error reading dropped file:", error);
+          alert("Failed to read file. Please ensure it's a valid text file.");
+        }
+      } else {
+        alert("Only text files (.txt, .csv) are supported for importing song lists.");
+      }
+    }
+  }, [allSongs]);
+
 
   return (
     <div className="max-w-5xl mx-auto p-4 md:p-6 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mt-4 mb-12 transition-colors">
@@ -344,21 +522,21 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
           </button>
           <button 
             onClick={() => handleSave(true)} 
-            disabled={!name.trim() || !isDirty}
+            disabled={!name.trim() || !isDirty || isSaving}
             className={`px-4 py-2 rounded-lg font-bold transition-all border ${
-              !name.trim() || !isDirty ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-white dark:bg-gray-800 border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+              !name.trim() || !isDirty || isSaving ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-white dark:bg-gray-800 border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
             }`}
           >
-            Save
+            {isSaving ? 'Saving...' : 'Save'}
           </button>
           <button 
             onClick={() => handleSave(false)} 
-            disabled={!name.trim() || !isDirty}
+            disabled={!name.trim() || !isDirty || isSaving}
             className={`px-4 md:px-6 py-2 rounded-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none transition-all ${
-              !name.trim() || !isDirty ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+              !name.trim() || !isDirty || isSaving ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            Save & Exit
+            {isSaving ? 'Saving...' : 'Save & Exit'}
           </button>
           <button 
             onClick={handleExport}
@@ -384,7 +562,21 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Selected Songs List */}
-          <div className="lg:col-span-2 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border border-gray-200 dark:border-gray-700">
+          <div 
+            className={`lg:col-span-2 relative bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border transition-all ${isDraggingOver ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-gray-200 dark:border-gray-700'}`}
+            onDragEnter={handleDragEnterFile}
+            onDragOver={handleDragOverFile}
+            onDragLeave={handleDragLeaveFile}
+            onDrop={handleDropFile}
+          >
+            {isDraggingOver && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-blue-500/10 backdrop-blur-[1px] pointer-events-none border-2 border-dashed border-blue-500 rounded-2xl">
+                <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-xl shadow-xl flex items-center gap-3">
+                  <i className="fa-solid fa-file-import text-blue-500 text-xl"></i>
+                  <span className="font-bold text-gray-900 dark:text-white">Drop to import song list</span>
+                </div>
+              </div>
+            )}
             <h3 className="font-bold text-gray-700 dark:text-gray-300 mb-3 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <span>Set Order</span>
@@ -408,10 +600,10 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
                 )}
               </div>
             </h3>
-            
+            {/* Added ref to itemRefs for SetlistSongRow */}
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
               {choices.length === 0 && (
-                <div className="text-center py-8 text-gray-400 dark:text-gray-500 italic border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                <div className="text-center py-8 text-gray-400 dark:text-gray-500 italic border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl h-full flex items-center justify-center">
                   Drag songs here or click + from the library
                 </div>
               )}
@@ -445,7 +637,9 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
           {/* Song Library */}
           <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col h-[600px]">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-gray-700 dark:text-gray-300">Add Songs</h3>
+              <h3 className="font-bold text-gray-700 dark:text-gray-300">
+                {searchQuery.trim().length >= 2 ? 'Search Results' : 'Recent Additions'}
+              </h3>
               <div className="flex gap-2">
                 {currentSong && (
                   <button 
@@ -489,7 +683,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
               )}
             </div>
             <div className="flex-1 overflow-y-auto space-y-1 pr-1">
-              {availableSongs.slice(0, 50).map(song => {
+              {librarySongs.slice(0, 50).map(song => {
                 const isAdded = existingSongIds.has(song.id);
                 return (
                   <button 

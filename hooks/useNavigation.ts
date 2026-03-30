@@ -1,8 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, RefObject } from 'react';
 import { ViewState, Song } from '../types';
 
 interface UseNavigationProps {
-  hasUnsavedChanges: boolean;
   setHasUnsavedChanges: (hasChanges: boolean) => void;
   setSearchQuery: (query: string) => void;
   setIsHeaderSearchActive: (isActive: boolean) => void; // Setter for isHeaderSearchActive from App.tsx
@@ -30,7 +29,6 @@ interface UseNavigationReturn {
 } // Ensure that the Song type is imported or defined correctly
 
 export const useNavigation = ({
-  hasUnsavedChanges,
   setHasUnsavedChanges,
   setSearchQuery,
   setIsHeaderSearchActive,
@@ -38,7 +36,7 @@ export const useNavigation = ({
   setSongToEdit,
   setTargetSetlistId,
   exitSetlist,
-}: UseNavigationProps): UseNavigationReturn => {
+}: UseNavigationProps, hasUnsavedChangesRef: RefObject<boolean>): UseNavigationReturn => {
   const [view, setView] = useState<ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD'>('SONG_VIEW');
   const [menuOpen, setMenuOpen] = useState(false);
   const [showRecentlyViewedSubMenu, setShowRecentlyViewedSubMenu] = useState(false);
@@ -46,32 +44,34 @@ export const useNavigation = ({
   const [cameFromAdminSongSearch, setCameFromAdminSongSearch] = useState(false);
   const [adminSetlistFilter, setAdminSetlistFilter] = useState<string>('');
 
-  const handleNavigation = useCallback((targetView: ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD', callback?: () => void) => {
-    if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
-        return;
-      }
-      setHasUnsavedChanges(false);
+const handleNavigation = useCallback((targetView: ViewState | 'SETLIST_MANAGER' | 'ADMIN_DASHBOARD', callback?: () => void) => {
+  if (hasUnsavedChangesRef.current) {
+    if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+      return;
     }
-    if (callback) callback();
-    setView(targetView);
-    setMenuOpen(false);
-    setShowRecentlyViewedSubMenu(false);
-    setShowRecentlyPlayedSetlistsSubMenu(false);
-    // Reset search-related states
-    setSearchQuery('');
-    setIsHeaderSearchActive(false);
-    setSelectedIndex(-1);
-    if (targetView !== 'SONG_FORM') {
-      setSongToEdit(undefined); // Clear song to edit when navigating, but not when going to the edit form
-    }
-    setTargetSetlistId(null); // Clear target setlist when navigating
-    exitSetlist(); // Call the passed exitSetlist
-  }, [hasUnsavedChanges, setHasUnsavedChanges, setSearchQuery, setIsHeaderSearchActive, setSelectedIndex, setSongToEdit, setTargetSetlistId, exitSetlist, setView]);
+  }
+
+  // Reset search and navigation state first, so callback can override specific values
+  setSearchQuery('');
+  setIsHeaderSearchActive(false);
+  setSelectedIndex(-1);
+  setTargetSetlistId(null); 
+
+  if (targetView !== 'SONG_FORM') {
+    setSongToEdit(undefined);
+  }
+
+  // Execute specific navigation logic (like setting targetSetlistId)
+  if (callback) callback();
+
+  setView(targetView);
+  setMenuOpen(false);
+  setShowRecentlyViewedSubMenu(false);
+  setShowRecentlyPlayedSetlistsSubMenu(false);
+}, [setHasUnsavedChanges, setSearchQuery, setIsHeaderSearchActive, setSelectedIndex, setSongToEdit, setTargetSetlistId, setView, setMenuOpen, setShowRecentlyViewedSubMenu, setShowRecentlyPlayedSetlistsSubMenu, hasUnsavedChangesRef]);
 
   const handleAdminNavigate = useCallback((query: string, type: 'songs' | 'setlists') => {
     if (type === 'songs') {
-      setCameFromAdminSongSearch(true);
       setView('SONG_VIEW');
       setSearchQuery(query);
       setIsHeaderSearchActive(true);

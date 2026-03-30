@@ -1,9 +1,12 @@
 import React from 'react';
 import { Song, SongChoice } from '../types';
 
+// Extending SongChoice locally for the UI flag if not in global types
+type ExtendedSongChoice = SongChoice & { isFuzzyMatch?: boolean };
+
 interface SetlistSongRowProps {
   index: number;
-  choice: SongChoice;
+  choice: ExtendedSongChoice;
   song?: Song;
   draggedIndex: number | null;
   isMetronomeActive: boolean;
@@ -55,6 +58,18 @@ export const SetlistSongRow = React.forwardRef<HTMLDivElement, SetlistSongRowPro
             <div>
               <span className="text-xs font-bold text-blue-500 dark:text-blue-400 mr-2">#{index + 1}</span>
               <span className="font-bold text-gray-900 dark:text-gray-100">{song?.title || 'Unknown Song'}</span>
+              {choice.isFuzzyMatch && (
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onUpdate(index, 'isFuzzyMatch' as any, undefined); }}
+                  className="ml-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-[10px] font-bold text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 animate-pulse hover:bg-amber-200 dark:hover:bg-amber-800/80 transition-colors cursor-pointer"
+                  title="Fuzzy Match: Click to confirm and remove this warning"
+                >
+                  <i className="fa-solid fa-wand-magic-sparkles text-[8px]"></i>
+                  <span>FUZZY MATCH</span>
+                  <i className="fa-solid fa-check"></i>
+                </button>
+              )}
             </div>
             <button 
               onClick={() => onRemove(index)}
