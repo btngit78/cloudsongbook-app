@@ -10,6 +10,11 @@ interface SetlistManagerProps {
   setlists: SetList[];
   allSongs: Song[];
   currentSong?: Song;
+  onSaveSong: (song: Partial<Song>) => Promise<Song>;
+  onDeleteSong: (song: Song) => Promise<void>;
+  favoriteSetlistIds: string[];
+  onToggleFavorite: (id: string) => void;
+  onBulkFavorite?: (ids: string[], shouldFavorite: boolean) => void;
   onSave: (setlist: SetList) => void;
   onArchive: (id: string) => void;
   onArchiveSetlists?: (ids: string[]) => void;
@@ -43,7 +48,7 @@ const getFriendlyDuration = (start: number, end: number) => {
 type SortKey = 'name' | 'updatedAt' | 'lastUsedAt';
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  user, setlists, allSongs, currentSong, onSave, onArchive, onArchiveSetlists, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = '', batchCount, onQuitBatch, onEditSetlists
+  user, setlists, allSongs, currentSong, onSaveSong, onDeleteSong, favoriteSetlistIds, onToggleFavorite, onBulkFavorite, onSave, onArchive, onArchiveSetlists, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = '', batchCount, onQuitBatch, onEditSetlists
 }) => {
   const [editingId, setEditingId] = useState<string | null>(initialEditingId || null);
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
@@ -216,6 +221,11 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
         initialSetlist={setlistToEdit}
         allSongs={allSongs}
         currentSong={currentSong}
+        user={user}
+        onSaveSong={onSaveSong}
+        onDeleteSong={onDeleteSong}
+        isFavorite={editingId ? favoriteSetlistIds.includes(editingId) : false}
+        onToggleFavorite={onToggleFavorite}
         onSave={handleSave}
         onCancel={() => {
           if (initialEditingId === editingId) {
@@ -250,21 +260,41 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
 
   const sortedSetlists = processList(visibleSetlists);
 
-  let primaryList: SetList[];
+  let primaryList: SetList[] = [];
+  let favoriteList: SetList[] = [];
   let secondaryList: SetList[] = [];
-  let primaryTitle: string;
-  let showOwnerInPrimary: boolean;
+  let primaryTitle = "Setlists";
+  let showOwnerInPrimary = false;
 
-  if (isNotAdmin && !showArchived) {
-    primaryList = sortedSetlists.filter(s => s.ownerId === user?.id);
-    secondaryList = sortedSetlists.filter(s => s.ownerId !== user?.id && !s.isArchived);
+  const isAdmin = user?.role === UserRole.ADMIN;
+  const isPremium = user?.role === UserRole.PREMIUM;
+
+  const anySelectedFavorited = selectedIds.some(id => favoriteSetlistIds.includes(id));
+  const allSelectedFavorited = selectedIds.every(id => favoriteSetlistIds.includes(id));
+
+  if (showArchived) {
+    primaryList = sortedSetlists;
+    primaryTitle = "Archived Setlists";
+    showOwnerInPrimary = true;
+  } else if (isAdmin) {
+    // Admin: Two tables - Favorites and Others (Co-owns everything)
+    favoriteList = sortedSetlists.filter(s => favoriteSetlistIds.includes(s.id));
+    primaryList = sortedSetlists.filter(s => !favoriteSetlistIds.includes(s.id));
+    primaryTitle = "Other Setlists";
+    showOwnerInPrimary = true;
+  } else if (isPremium) {
+    // Premium: Combined My Collection (My stuff + Favorites)
+    primaryList = sortedSetlists.filter(s => s.ownerId === user?.id || favoriteSetlistIds.includes(s.id));
+    primaryTitle = "My Collection";
+    showOwnerInPrimary = true; // Logic inside renderTable will hide current user's name
+    secondaryList = sortedSetlists.filter(s => s.ownerId !== user?.id && !favoriteSetlistIds.includes(s.id));
+  } else {
+    // Free: Favorites table on top, My Setlists, then Community
+    favoriteList = sortedSetlists.filter(s => favoriteSetlistIds.includes(s.id));
+    primaryList = sortedSetlists.filter(s => s.ownerId === user?.id && !favoriteSetlistIds.includes(s.id));
     primaryTitle = "My Setlists";
     showOwnerInPrimary = false;
-  } else {
-    primaryList = sortedSetlists;
-    secondaryList = [];
-    primaryTitle = "All Setlists";
-    showOwnerInPrimary = true;
+    secondaryList = sortedSetlists.filter(s => s.ownerId !== user?.id && !favoriteSetlistIds.includes(s.id));
   }
 
   const sortButtons = (
@@ -328,7 +358,8 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
               ) : (
                 list.map(setlist => {
                   const ownerName = ownerNames[setlist.ownerId];
-                  const displayOwner = showOwner && ownerName && ownerName !== 'Admin';
+                  const displayOwner = showOwner && ownerName && ownerName !== 'Admin' && (isAdmin || setlist.ownerId !== user?.id);
+                  const isFav = favoriteSetlistIds.includes(setlist.id);
                   
                   return (
                     <tr key={setlist.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group ${setlist.isArchived ? 'bg-yellow-50/50 dark:bg-yellow-900/10 opacity-70' : ''}`}>
@@ -342,6 +373,12 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
                         <div className="flex items-center gap-2">
+                          <button title="Favorite"
+                            onClick={() => onToggleFavorite(setlist.id)}
+                            className={`transition-colors ${isFav ? 'text-red-500' : 'text-gray-300 hover:text-red-300 opacity-0 group-hover:opacity-100'}`}
+                          >
+                            <i className={`fa-solid fa-heart ${isFav ? 'animate-pulse' : ''}`}></i>
+                          </button>
                           <button title="Play"onClick={() => onPlay(setlist)} className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-colors">
                             <i className="fa-solid fa-play text-xs ml-0.5"></i>
                           </button>
@@ -414,7 +451,11 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
         </div>
       </div>
 
-      {renderTable(primaryList, primaryTitle, showOwnerInPrimary, sortButtons)}
+      {/* Render Favorites table if it has items (For Admin/Free roles) */}
+      {favoriteList.length > 0 && renderTable(favoriteList, "Favorites", true, sortButtons)}
+
+      {/* Main Table: Collection / My Setlists / Others */}
+      {renderTable(primaryList, primaryTitle, showOwnerInPrimary, favoriteList.length === 0 ? sortButtons : undefined)}
       
       {/* Only show community setlists if there are any */}
       {secondaryList.length > 0 && renderTable(secondaryList, "Community Setlists", true)}
@@ -424,6 +465,28 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
           <div className="px-3 border-r border-gray-200 dark:border-gray-700">
             <span className="text-sm font-bold text-gray-900 dark:text-white">{selectedIds.length} Selected</span>
           </div>
+          {onBulkFavorite && (
+            <div className="flex gap-2">
+              {!allSelectedFavorited && (
+                <button 
+                  onClick={() => { onBulkFavorite(selectedIds, true); setSelectedIds([]); }}
+                  className="px-4 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm font-bold rounded-xl hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
+                  title="Mark selected as favorites"
+                >
+                  <i className="fa-solid fa-heart"></i> Favorite
+                </button>
+              )}
+              {anySelectedFavorited && (
+                <button 
+                  onClick={() => { onBulkFavorite(selectedIds, false); setSelectedIds([]); }}
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all flex items-center gap-2"
+                  title="Remove selected from favorites"
+                >
+                  <i className="fa-solid fa-heart-crack"></i> Unfavorite
+                </button>
+              )}
+            </div>
+          )}
           {onEditSetlists && (
             <button 
               onClick={() => onEditSetlists(selectedIds)}

@@ -716,6 +716,25 @@ const App: React.FC = () => {
     setView('SONG_FORM');
   };
 
+  const handleToggleFavoriteSetlist = (setlistId: string) => {
+    if (!user) return;
+    const currentFavorites = (user.settings.favoriteSetlistIds || []) as string[];
+    const newFavorites: string[] = currentFavorites.includes(setlistId)
+      ? currentFavorites.filter(id => id !== setlistId)
+      : [...currentFavorites, setlistId];
+    handleUpdateSettings({ favoriteSetlistIds: newFavorites as string[] });
+  };
+
+  const handleBulkFavoriteSetlists = (ids: string[], shouldFavorite: boolean) => {
+    if (!user) return;
+    const currentFavorites = new Set((user.settings.favoriteSetlistIds || []) as string[]);
+    ids.forEach(id => {
+      if (shouldFavorite) currentFavorites.add(id);
+      else currentFavorites.delete(id);
+    });
+    handleUpdateSettings({ favoriteSetlistIds: Array.from(currentFavorites) as string[] });
+  };
+
   const handleArchiveSong = async () => {
     if (currentSong) await performArchiveSong(currentSong);
   };
@@ -1214,6 +1233,11 @@ const App: React.FC = () => {
             setlists={setlists}
             allSongs={allSongs.filter(s => !s.isArchived)}
             currentSong={currentSong ?? undefined}
+            onSaveSong={saveSong}
+            onDeleteSong={async (song) => { await deleteSpecificSong(song); }}
+            favoriteSetlistIds={user.settings.favoriteSetlistIds || []}
+            onToggleFavorite={handleToggleFavoriteSetlist}
+            onBulkFavorite={handleBulkFavoriteSetlists}
             onSave={async (updatedSetlist: SetList) => {
               await saveSetlist(updatedSetlist);
               

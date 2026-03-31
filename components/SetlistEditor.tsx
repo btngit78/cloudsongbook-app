@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Song, SetList, SongChoice } from '../types';
+import { Song, SetList, SongChoice, User } from '../types';
 import { useFilteredSongs } from '../hooks/useSongSearch';
 import { useMetronome } from '../hooks/useMetronome';
 import { normalizeText } from '../utils/searchUtils';
@@ -9,6 +9,11 @@ interface SetlistEditorProps {
   initialSetlist?: SetList;
   allSongs: Song[];
   currentSong?: Song;
+  user: User | null;
+  onSaveSong: (song: Partial<Song>) => Promise<Song>;
+  onDeleteSong: (song: Song) => Promise<void>;
+  isFavorite?: boolean;
+  onToggleFavorite?: (id: string) => void;
   onSave: (name: string, choices: SongChoice[], keepOpen?: boolean) => Promise<void> | void;
   onCancel: () => void;
   batchCount?: number;
@@ -17,7 +22,7 @@ interface SetlistEditorProps {
 }
 
 const SetlistEditor: React.FC<SetlistEditorProps> = ({ 
-  initialSetlist, allSongs, currentSong, onSave, onCancel, onDirtyChange, batchCount, onQuitBatch
+  initialSetlist, allSongs, currentSong, user, onSaveSong, onDeleteSong, isFavorite, onToggleFavorite, onSave, onCancel, onDirtyChange, batchCount, onQuitBatch
 }) => {
   const [name, setName] = useState(initialSetlist?.name || '');
   const [choices, setChoices] = useState<SongChoice[]>(initialSetlist?.choices || []);
@@ -28,6 +33,8 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
   const [sortKeys, setSortKeys] = useState<('language' | 'title')[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [autoAddedSongs, setAutoAddedSongs] = useState<Song[]>([]);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [initialData, setInitialData] = useState({ name: initialSetlist?.name || '', choices: initialSetlist?.choices || [] });
   const dragCounter = useRef(0);
@@ -396,7 +403,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
     setIsDraggingOver(false);
     dragCounter.current = 0;
 
-    // Helper function for fuzzy string matching (Levenshtein Distance)
+    // Helper function for fuzzy matching
     const getSimilarity = (s1: string, s2: string) => {
       const len1 = s1.length;
       const len2 = s2.length;
@@ -416,33 +423,45 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
+      const isJson = file.name.endsWith('.json');
+      const isText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.csv');
+
+      if (isJson || isText) {
         try {
           const text = await file.text();
-          const songNames = text.split(/,|\n/).map(name => name.trim()).filter(Boolean);
+          let importData: any[] = [];
           
-          const normalizedAllSongs = new Map<string, Song[]>();
-          allSongs.forEach(s => {
-            const normalizedTitle = normalizeText(s.title);
-            if (!normalizedAllSongs.has(normalizedTitle)) {
-              normalizedAllSongs.set(normalizedTitle, []);
-            }
-            normalizedAllSongs.get(normalizedTitle)?.push(s);
-          });
+          if (isJson) {
+            importData = JSON.parse(text);
+            if (!Array.isArray(importData)) importData = [importData];
+          } else {
+            importData = text.split(/,|\n/).map(name => ({ title: name.trim() })).filter(item => item.title);
+          }
 
-          const unmatchedSongs: string[] = [];
-          const matchedSongsForImport: { song: Song; isFuzzy: boolean }[] = []; 
+          const newlyCreatedTracker: Song[] = [];
+          const choicesToSet: SongChoice[] = [];
+          const missingFromDb: any[] = [];
 
-          songNames.forEach(inputName => {
-            const normalizedInputName = normalizeText(inputName);
-            const matchedSongs = normalizedAllSongs.get(normalizedInputName);
-            if (matchedSongs && matchedSongs.length > 0) {
-              matchedSongsForImport.push({ song: matchedSongs[0], isFuzzy: false });
+          // First Pass: Find exact/fuzzy matches
+          for (const item of importData) {
+            const itemTitle = item.title || item.name || '';
+            const normalizedInputName = normalizeText(itemTitle);
+            
+            const exactMatch = allSongs.find(s => normalizeText(s.title) === normalizedInputName);
+            
+            if (exactMatch) {
+              choicesToSet.push({
+                songId: exactMatch.id,
+                key: item.key || exactMatch.key,
+                tempo: item.tempo || exactMatch.tempo,
+                style: item.style || '',
+                singer: item.singer || ''
+              });
             } else {
               // Attempt Fuzzy Match
               let bestMatch: Song | null = null;
               let maxSimilarity = 0;
-              const FUZZY_THRESHOLD = 0.75; // 75% similarity required to consider it a match
+              const FUZZY_THRESHOLD = 0.75;
 
               allSongs.forEach(song => {
                 const similarity = getSimilarity(normalizedInputName, normalizeText(song.title));
@@ -453,68 +472,113 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
               });
 
               if (bestMatch && maxSimilarity >= FUZZY_THRESHOLD) {
-                matchedSongsForImport.push({ song: bestMatch, isFuzzy: true });
+                choicesToSet.push({
+                  songId: (bestMatch as Song).id,
+                  key: item.key || (bestMatch as Song).key,
+                  tempo: item.tempo || (bestMatch as Song).tempo,
+                  style: item.style || '',
+                  singer: item.singer || ''
+                });
               } else {
-                unmatchedSongs.push(inputName);
+                missingFromDb.push(item);
               }
             }
-          });
-          
-          // Handle unmatched songs and user decision
-          if (unmatchedSongs.length > 0) {
-            const displayCount = Math.min(unmatchedSongs.length, 10);
-            const message = `Could not find the following song(s) in your library:\n\n${unmatchedSongs.slice(0, displayCount).join('\n')}${unmatchedSongs.length > 10 ? `\n...and ${unmatchedSongs.length - 10} more.` : ''}\n\nDo you want to proceed with importing the matched songs?`;
+          }
+
+          // Second Pass: Handle missing songs
+          if (missingFromDb.length > 0) {
+            const confirmMsg = `${missingFromDb.length} song(s) were not found in your database.\n\nWould you like to create them automatically using the placeholder text "(to be done)"?`;
             
-            if (!window.confirm(message)) {
-              // User chose to cancel the import entirely
-              return; 
+            if (window.confirm(confirmMsg)) {
+              for (const item of missingFromDb) {
+                const songData: Partial<Song> = {
+                  title: item.title || item.name || 'Untitled Song',
+                  authors: item.authors || '',
+                  key: item.key || '',
+                  tempo: item.tempo,
+                  body: `(to be done - added: ${new Date().toLocaleDateString()})`,
+                  ownerId: user?.id || '',
+                  language: 'English',
+                  isArchived: false
+                };
+                
+                try {
+                  const savedSong = await onSaveSong(songData);
+                  newlyCreatedTracker.push(savedSong);
+                  choicesToSet.push({
+                    songId: savedSong.id,
+                    key: item.key || savedSong.key,
+                    tempo: item.tempo || savedSong.tempo,
+                    style: item.style || '',
+                    singer: item.singer || ''
+                  });
+                } catch (err) {
+                  console.error("Failed to auto-create song", err);
+                }
+              }
             }
           }
 
-          // Proceed with importing only the matched songs if user confirmed or no unmatched songs
-          if (matchedSongsForImport.length > 0) {
-            setChoices(prevChoices => {
-              const currentIds = new Set(prevChoices.map(c => c.songId));
-              const newChoices = matchedSongsForImport
-                .filter(item => !currentIds.has(item.song.id))
-                .map(item => ({
-                  songId: item.song.id,
-                  key: item.song.key,
-                  tempo: item.song.tempo,
-                  style: '',
-                  singer: '',
-                  isFuzzyMatch: item.isFuzzy // Track the fuzzy state
-                }));
-              return [...prevChoices, ...newChoices];
-            });
-          } else if (songNames.length > 0) {
-            // If no matched songs but the file wasn't empty, inform the user.
-            // If unmatchedSongs.length > 0, the user already saw a prompt.
-            // This covers cases where all songs were unmatched, and the user chose to proceed.
-            if (matchedSongsForImport.length === 0 && unmatchedSongs.length === 0) {
-                // This case means the file was empty or only contained blank lines. No alert needed.
-            } else if (matchedSongsForImport.length === 0) {
-                alert("No songs from the file could be matched to your library.");
-            }
-          }
+          setChoices(prev => {
+            const existingIds = new Set(prev.map(c => c.songId));
+            const uniqueNew = choicesToSet.filter(c => !existingIds.has(c.songId));
+            return [...prev, ...uniqueNew];
+          });
 
+          if (newlyCreatedTracker.length > 0) {
+            setAutoAddedSongs(newlyCreatedTracker.slice(0, 20));
+            setShowSummaryModal(true);
+          }
         } catch (error) {
           console.error("Error reading dropped file:", error);
-          alert("Failed to read file. Please ensure it's a valid text file.");
+          alert("Failed to read file. Please ensure it's a valid text or JSON file.");
         }
       } else {
-        alert("Only text files (.txt, .csv) are supported for importing song lists.");
+        alert("Only text (.txt, .csv) or .json files are supported.");
       }
     }
-  }, [allSongs]);
+  }, [allSongs, user, onSaveSong]);
+
+  const handleCleanupAutoAdded = async (idsToDelete: string[]) => {
+    if (idsToDelete.length === 0) {
+      setShowSummaryModal(false);
+      return;
+    }
+
+    if (window.confirm(`Permanently delete ${idsToDelete.length} newly created songs?`)) {
+      try {
+        for (const id of idsToDelete) {
+          const song = autoAddedSongs.find(s => s.id === id);
+          if (song) {
+            await onDeleteSong(song);
+            setChoices(prev => prev.filter(c => c.songId !== id));
+          }
+        }
+        setShowSummaryModal(false);
+      } catch (err) {
+        console.error("Cleanup failed", err);
+      }
+    }
+  };
 
 
   return (
     <div className="max-w-5xl mx-auto p-4 md:p-6 bg-white dark:bg-gray-800 rounded-3xl shadow-xl mt-4 mb-12 transition-colors">
       <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          {initialSetlist ? 'Edit Setlist' : 'New Setlist'}
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {initialSetlist ? 'Edit Setlist' : 'New Setlist'}
+          </h2>
+          {initialSetlist && onToggleFavorite && (
+            <button 
+              onClick={() => onToggleFavorite(initialSetlist.id)}
+              className={`text-xl transition-all hover:scale-110 ${isFavorite ? 'text-red-500' : 'text-gray-300 dark:text-gray-600'}`}
+              title={isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+            >
+              <i className={`fa-solid fa-heart ${isFavorite ? 'animate-pulse' : ''}`}></i>
+            </button>
+          )}
+        </div>
         <div className="flex space-x-2">
           {batchCount !== undefined && batchCount > 0 && onQuitBatch && (
             <button
@@ -749,6 +813,49 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
 
             <div className="mt-8 flex justify-end">
               <button onClick={closeExportModal} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-bold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Added Songs Summary Modal */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
+            <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">Import Summary</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              The following songs were automatically added to your library. Uncheck any you wish to keep, or select those you want to delete now.
+            </p>
+            
+            <div className="max-h-60 overflow-y-auto border rounded-xl mb-6 divide-y dark:divide-gray-700">
+              {autoAddedSongs.map(song => (
+                <label key={song.id} className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    defaultChecked={false}
+                    id={`cleanup-${song.id}`}
+                    className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 mr-3"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">{song.title}</p>
+                    <p className="text-xs text-gray-500 italic">Added as placeholder</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => {
+                  const selected = autoAddedSongs
+                    .filter(s => (document.getElementById(`cleanup-${s.id}`) as HTMLInputElement)?.checked)
+                    .map(s => s.id);
+                  handleCleanupAutoAdded(selected);
+                }}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all"
+              >
+                Finish
+              </button>
             </div>
           </div>
         </div>

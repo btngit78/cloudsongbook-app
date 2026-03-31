@@ -28,6 +28,7 @@ export interface UserSettings {
   showComments?: boolean;
   autoRemoveBrokenLinks?: boolean;
   parenthesesStyle?: 'normal' | 'italic' | 'colored';
+  favoriteSetlistIds?: string[];
 }
 
 export interface Song {
