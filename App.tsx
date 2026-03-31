@@ -1240,16 +1240,7 @@ const App: React.FC = () => {
             onBulkFavorite={handleBulkFavoriteSetlists}
             onSave={async (updatedSetlist: SetList) => {
               await saveSetlist(updatedSetlist);
-              
-              // Refresh the active setlist session immediately if we edited the list currently in play.
-              // This ensures the HUD reflects changes (like reordering or renaming) even if the editor stays open.
-              if (activeSetlist && updatedSetlist.id === activeSetlist.id) {
-                const songIdToFind = preEditSongIdRef.current || currentSong?.id;
-                const newIndex = updatedSetlist.choices.findIndex(c => c.songId === songIdToFind);
-                
-                playSetlist(updatedSetlist, newIndex !== -1 ? newIndex : 0);
-                setShowUpdateToast(true);
-              }
+              setShowUpdateToast(true);
 
               // Sequential editing: If we just saved and exited (keepOpen was false), 
               // we don't handle progression here; it's handled in the onClose callback
@@ -1297,6 +1288,16 @@ const App: React.FC = () => {
               // Clear the dirty flag immediately
               setHasUnsavedChanges(false);
               
+              // Refresh the active setlist session if we edited the list currently in play.
+              // This ensures the HUD reflects changes (like reordering or renaming) once we return to the viewer.
+              const targetId = updatedSetlist?.id || targetSetlistId;
+              if (activeSetlist && targetId === activeSetlist.id) {
+                const listToUse = updatedSetlist || setlists.find(s => s.id === activeSetlist.id) || activeSetlist;
+                const songIdToFind = preEditSongIdRef.current || currentSong?.id;
+                const newIndex = listToUse.choices.findIndex(c => c.songId === songIdToFind);
+                playSetlist(listToUse, newIndex !== -1 ? newIndex : 0);
+              }
+
               if (batchSetlistEditQueue.length > 0) {
                 const [next, ...remaining] = batchSetlistEditQueue;
                 setBatchSetlistEditQueue(remaining);

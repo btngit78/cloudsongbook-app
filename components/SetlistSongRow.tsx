@@ -42,14 +42,24 @@ export const SetlistSongRow = React.forwardRef<HTMLDivElement, SetlistSongRowPro
       ref={ref}
       tabIndex={0}
       onKeyDown={(e) => onKeyDown(e, index)}
-      draggable
-      onDragStart={(e) => onDragStart(e, index)}
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={onDrop}
-      className={`bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${draggedIndex === index ? 'opacity-50 ring-2 ring-blue-400' : 'hover:shadow-md'}`}
+      className={`song-row bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${draggedIndex === index ? 'opacity-50 ring-2 ring-blue-400' : 'hover:shadow-md'}`}
     >
       <div className="flex items-start gap-3">
-        <div className="mt-2 cursor-grab text-gray-300 dark:text-gray-600 hover:text-gray-500" title="Drag to reorder or use Ctrl+Up/Down">
+        <div 
+          className="mt-2 cursor-grab text-gray-300 dark:text-gray-600 hover:text-gray-500 p-1 -m-1" 
+          title="Drag to reorder or use Ctrl+Up/Down"
+          draggable
+          onDragStart={(e) => {
+            // Set the drag ghost image to the entire row instead of just the grip icon
+            const row = e.currentTarget.closest('.song-row');
+            if (row && e.dataTransfer) {
+              e.dataTransfer.setDragImage(row, 20, 20);
+            }
+            onDragStart(e, index);
+          }}
+        >
           <i className="fa-solid fa-grip-vertical"></i>
         </div>
         

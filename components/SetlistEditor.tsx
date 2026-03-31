@@ -657,6 +657,7 @@ const SetlistEditor: React.FC<SetlistEditorProps> = ({
                 <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded-full">{choices.length} songs</span>
               </div>
               <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Sort by:</span>
                 {renderSortButton('language', 'Language')}
                 {renderSortButton('title', 'Title')}
                 {sortKeys.length > 0 && (
