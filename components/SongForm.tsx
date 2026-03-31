@@ -14,6 +14,8 @@ interface SongFormProps {
   onQuitBatch?: () => void;
 }
 
+const VIETNAMESE_REGEX = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+
 const LANGUAGES = ['English', 'Vietnamese', 'French', 'Spanish'];
 
 const DEFAULT_FORM_DATA: Partial<Song> = {
@@ -119,6 +121,29 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
 
     onSave(processedData, keepOpen);
   };
+
+  const handleLyricsSearch = () => {
+    if (!formData.title?.trim()) return;
+    
+    const title = formData.title.trim();
+    const langLower = formData.language?.toLowerCase();
+    
+    let url = '';
+    if (langLower === 'vietnamese' || langLower === 'french' || VIETNAMESE_REGEX.test(title)) {
+      url = `https://hopamviet.vn/chord/search.html?song=${encodeURIComponent(title)}`;
+    } else if (langLower === 'english') {
+      url = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(title)}`;
+    } else {
+      url = `https://www.google.com/search?q=${encodeURIComponent(title)}+lyrics`;
+    }
+    
+    window.open(url, '_blank');
+  };
+
+  const langLower = formData.language?.toLowerCase();
+  const searchLabel = (langLower === 'vietnamese' || langLower === 'french' || (formData.title ? VIETNAMESE_REGEX.test(formData.title) : false))
+    ? "Search at hopamviet.vn"
+    : (langLower === 'english' ? "Search at ultimate-guitar.com" : "Default browser search");
 
   const handleCancel = async () => {
     if (isDirty) {
@@ -320,18 +345,31 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
           </div>
         </div> 
 
-        {/* PDF Toggle */}
-        <div className="flex items-center space-x-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">
-          <input
-            id="pdf-check"
-            type="checkbox"
-            className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-            checked={formData.isPdf}
-            onChange={e => setFormData({ ...formData, isPdf: e.target.checked })}
-          />
-          <label htmlFor="pdf-check" className="text-sm font-bold text-blue-900 dark:text-blue-100 select-none cursor-pointer">
-            This song uses a PDF file instead of ChordPro-like text
-          </label>
+        {/* PDF Toggle & Lyrics Search */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="md:col-span-3 flex items-center space-x-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">
+            <input
+              id="pdf-check"
+              type="checkbox"
+              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+              checked={formData.isPdf}
+              onChange={e => setFormData({ ...formData, isPdf: e.target.checked })}
+            />
+            <label htmlFor="pdf-check" className="text-sm font-bold text-blue-900 dark:text-blue-100 select-none cursor-pointer">
+              This song uses a PDF file instead of ChordPro-like text
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLyricsSearch}
+            disabled={!formData.title?.trim()}
+            className="md:col-span-1 flex items-center justify-center gap-2 px-5 py-4 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-2xl border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-full"
+            title={searchLabel}
+          >
+            <i className="fa-solid fa-magnifying-glass"></i>
+            Search for lyrics
+          </button>
         </div>
 
         {/* Content Area */}
