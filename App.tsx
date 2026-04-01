@@ -775,6 +775,12 @@ const App: React.FC = () => {
   const handleCreateSetlistFromSearch = async () => {
     if (!newSetlistName.trim() || !user) return;
 
+    const normalizedName = newSetlistName.trim().toLowerCase();
+    if (setlists.some(s => s.name.trim().toLowerCase() === normalizedName)) {
+      alert(`A setlist named "${newSetlistName.trim()}" already exists. Please choose a different name.`);
+      return;
+    }
+
     const newId = Date.now().toString();
     const newSetlist: SetList = {
       id: newId,

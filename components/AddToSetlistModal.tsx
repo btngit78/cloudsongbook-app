@@ -31,6 +31,12 @@ const AddToSetlistModal: React.FC<AddToSetlistModalProps> = ({
       alert('Please enter a name for the new setlist.');
       return;
     }
+
+    if (mode === 'new' && availableSetlists.some(s => s.name.trim().toLowerCase() === newSetlistName.trim().toLowerCase())) {
+      alert(`A setlist named "${newSetlistName.trim()}" already exists. Please choose a unique name.`);
+      return;
+    }
+
     if (mode === 'existing' && !selectedSetlistId) {
       alert('Please select a setlist.');
       return;

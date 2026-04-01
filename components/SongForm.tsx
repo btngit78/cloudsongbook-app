@@ -37,6 +37,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
   const [keywordsInput, setKeywordsInput] = useState('');
   const [errors, setErrors] = useState<Partial<Record<keyof Song, string>>>({});
   const [error, setError] = useState<string | null>(null);
+  const [searchProvider, setSearchProvider] = useState<'auto' | 'hopamviet' | 'ultimate' | 'google'>('auto');
 
   const { 
     tempo: metronomeTempo, 
@@ -128,22 +129,41 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
     const title = formData.title.trim();
     const langLower = formData.language?.toLowerCase();
     
-    let url = '';
-    if (langLower === 'vietnamese' || langLower === 'french' || VIETNAMESE_REGEX.test(title)) {
-      url = `https://hopamviet.vn/chord/search.html?song=${encodeURIComponent(title)}`;
-    } else if (langLower === 'english') {
-      url = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(title)}`;
-    } else {
-      url = `https://www.google.com/search?q=${encodeURIComponent(title)}+lyrics`;
+    let provider = searchProvider;
+    if (provider === 'auto') {
+      if (langLower === 'vietnamese' || langLower === 'french' || VIETNAMESE_REGEX.test(title)) {
+        provider = 'hopamviet';
+      } else if (langLower === 'english') {
+        provider = 'ultimate';
+      } else {
+        provider = 'google';
+      }
     }
+
+    const url = provider === 'hopamviet'
+      ? `https://hopamviet.vn/chord/search?song=${title.replace(/\s+/g, '+')}`
+      : provider === 'ultimate'
+        ? `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(title)}`
+        : `https://www.google.com/search?q=${encodeURIComponent(title)}+lyrics`;
     
     window.open(url, '_blank');
   };
 
   const langLower = formData.language?.toLowerCase();
-  const searchLabel = (langLower === 'vietnamese' || langLower === 'french' || (formData.title ? VIETNAMESE_REGEX.test(formData.title) : false))
+  let effectiveProvider = searchProvider;
+  if (effectiveProvider === 'auto') {
+    if (langLower === 'vietnamese' || langLower === 'french' || (formData.title ? VIETNAMESE_REGEX.test(formData.title) : false)) {
+      effectiveProvider = 'hopamviet';
+    } else if (langLower === 'english') {
+      effectiveProvider = 'ultimate';
+    } else {
+      effectiveProvider = 'google';
+    }
+  }
+
+  const searchLabel = effectiveProvider === 'hopamviet'
     ? "Search at hopamviet.vn"
-    : (langLower === 'english' ? "Search at ultimate-guitar.com" : "Default browser search");
+    : (effectiveProvider === 'ultimate' ? "Search at ultimate-guitar.com" : "Default browser search");
 
   const handleCancel = async () => {
     if (isDirty) {
@@ -360,16 +380,29 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
             </label>
           </div>
 
-          <button
-            type="button"
-            onClick={handleLyricsSearch}
-            disabled={!formData.title?.trim()}
-            className="md:col-span-1 flex items-center justify-center gap-2 px-5 py-4 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-2xl border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-full"
-            title={searchLabel}
-          >
-            <i className="fa-solid fa-magnifying-glass"></i>
-            Search for lyrics
-          </button>
+          <div className="md:col-span-1 flex flex-col gap-2">
+            <select
+              aria-label="Search Provider"
+              className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs p-2 focus:ring-2 focus:ring-blue-500 transition-all"
+              value={searchProvider}
+              onChange={e => setSearchProvider(e.target.value as any)}
+            >
+              <option value="auto">Auto-detect</option>
+              <option value="hopamviet">Hop Am Viet</option>
+              <option value="ultimate">Ultimate Guitar</option>
+              <option value="google">Google Search</option>
+            </select>
+            <button
+              type="button"
+              onClick={handleLyricsSearch}
+              disabled={!formData.title?.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-5 py-2 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-2xl border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              title={searchLabel}
+            >
+              <i className="fa-solid fa-magnifying-glass"></i>
+              Search for lyrics
+            </button>
+          </div>
         </div>
 
         {/* Content Area */}

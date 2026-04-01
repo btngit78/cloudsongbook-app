@@ -103,6 +103,17 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     const targetId = isNew ? Date.now().toString() : editingId!;
     const originalSetlist = isNew ? undefined : setlists.find(s => s.id === editingId);
 
+    // Ensure name uniqueness within the visible library
+    const normalizedName = name.trim().toLowerCase();
+    const isDuplicate = setlists.some(s => 
+      s.id !== (isNew ? null : editingId) && s.name.trim().toLowerCase() === normalizedName
+    );
+
+    if (isDuplicate) {
+      alert(`A setlist with the name "${name.trim()}" already exists. Please use a unique name.`);
+      return;
+    }
+
     const newSetlist: SetList = {
       id: targetId,
       name,
@@ -131,9 +142,17 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
   };
 
   const handleDuplicate = (setlistToCopy: SetList) => {
+    const newName = `${setlistToCopy.name} (Copy)`;
+    const isDuplicate = setlists.some(s => s.name.trim().toLowerCase() === newName.toLowerCase());
+    
+    if (isDuplicate) {
+      alert(`Conflict: A setlist named "${newName}" already exists.`);
+      return;
+    }
+
     const newSetlist: SetList = {
       id: Date.now().toString(),
-      name: `${setlistToCopy.name} (Copy)`,
+      name: newName,
       choices: [...setlistToCopy.choices],
       createdAt: Date.now(),
       updatedAt: Date.now(),

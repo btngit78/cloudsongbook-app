@@ -110,7 +110,7 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                 </div>
                 <div 
                   className="text-left flex-1 cursor-pointer min-w-0 mr-4"
-                  onClick={() => toggleSelect(s.id)}
+                  onClick={() => onSelectSong(s.id)}
                 >
                   <p className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{s.title}</p>
                   <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center space-x-2 overflow-hidden">
