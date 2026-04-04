@@ -104,12 +104,30 @@ export const LyricsRenderer: React.FC<LyricsRendererProps> = ({ song, settings, 
   };
 
   const formatLyrics = (text: string) => {
+    // 1. Split by parentheses first (Instructions - Red)
     const parts = text.split(/(\([^)]*\))/g);
+    
     return parts.map((part, index) => {
       if (part.startsWith('(') && part.endsWith(')')) {
         return <span key={index} className="text-red-600 dark:text-red-400">{part}</span>;
       }
-      return part;
+
+      // 2. Further process normal parts for angle brackets (Green brackets)
+      const subParts = part.split(/(<[^>]*>)/g);
+      if (subParts.length === 1) return part;
+
+      return subParts.map((subPart, subIndex) => {
+        if (subPart.startsWith('<') && subPart.endsWith('>')) {
+          return (
+            <React.Fragment key={`${index}-${subIndex}`}>
+              <span className="text-green-600 dark:text-green-400">&lt;</span>
+              {subPart.slice(1, -1)}
+              <span className="text-green-600 dark:text-green-400">&gt;</span>
+            </React.Fragment>
+          );
+        }
+        return subPart;
+      });
     });
   };
 

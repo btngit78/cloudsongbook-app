@@ -12,6 +12,8 @@ interface RecentSongsViewProps {
   onEditSongs: (songs: Song[]) => void;
 }
 
+type SortKey = 'createdAt' | 'title' | 'authors' | 'language' | 'key' | 'owner';
+
 const RecentSongsView: React.FC<RecentSongsViewProps> = ({
   songs,
   onSelectSong,
@@ -23,6 +25,8 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
 }) => {
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     const fetchOwners = async () => {
@@ -59,7 +63,47 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
     }
   };
 
-  const selectedSongs = useMemo(() => songs.filter(s => selectedIds.has(s.id)), [songs, selectedIds]);
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'title' || key === 'authors' ? 'asc' : 'desc');
+    }
+  };
+
+  const sortedSongs = useMemo(() => {
+    return [...songs].sort((a, b) => {
+      let valA: any = a[sortKey as keyof Song] || '';
+      let valB: any = b[sortKey as keyof Song] || '';
+
+      if (sortKey === 'owner') {
+        valA = ownerNames[a.ownerId] || '';
+        valB = ownerNames[b.ownerId] || '';
+      }
+
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+        return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+
+      return sortDir === 'asc' ? valA - valB : valB - valA;
+    });
+  }, [songs, sortKey, sortDir, ownerNames]);
+
+  const selectedSongs = useMemo(() => sortedSongs.filter(s => selectedIds.has(s.id)), [sortedSongs, selectedIds]);
+
+  const SortButton = ({ k, label, icon }: { k: SortKey; label: string; icon: string }) => (
+    <button
+      onClick={() => handleSort(k)}
+      className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex items-center gap-1.5 ${sortKey === k ? 'bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/40 dark:border-blue-700 dark:text-blue-300' : 'bg-white border-gray-300 text-gray-600 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 hover:bg-gray-50'}`}
+    >
+      <i className={`fa-solid ${icon}`}></i>
+      {label}
+      {sortKey === k && <i className={`fa-solid fa-chevron-${sortDir === 'asc' ? 'up' : 'down'} text-[10px]`}></i>}
+    </button>
+  );
 
   return (
     <div className="max-w-4xl mx-auto p-6 pb-24">
@@ -82,13 +126,24 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
           </button>
         </div>
       </div>
+
+      <div className="mb-6 flex flex-wrap gap-2 items-center">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2">Sort by:</span>
+        <SortButton k="createdAt" label="Time" icon="fa-clock" />
+        <SortButton k="title" label="Title" icon="fa-font" />
+        <SortButton k="authors" label="Authors" icon="fa-user-pen" />
+        <SortButton k="key" label="Key" icon="fa-music" />
+        <SortButton k="language" label="Language" icon="fa-language" />
+        <SortButton k="owner" label="Owner" icon="fa-user-shield" />
+      </div>
+
       <div className="grid gap-4">
-        {songs.length === 0 ? (
+        {sortedSongs.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-3xl border border-dashed border-gray-300 dark:border-gray-700 transition-colors">
             <p className="text-gray-500 dark:text-gray-400 font-medium">No songs found.</p>
           </div>
         ) : (
-          songs.map(s => {
+          sortedSongs.map(s => {
             const ownerName = (!s.ownerId || s.ownerId === 'Unknown') ? 'Unknown' : ownerNames[s.ownerId] || 'Loading...';
             const displayOwner = ownerName !== 'Admin' && ownerName !== 'Loading...';
 
@@ -115,6 +170,8 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                   <p className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{s.title}</p>
                   <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center space-x-2 overflow-hidden">
                     <span className="truncate">{s.authors}</span>
+                    <span className="flex-shrink-0 text-gray-300 dark:text-gray-600">&middot;</span>
+                    <span className="flex-shrink-0 italic">{s.language}</span>
                     <span className="flex-shrink-0 text-gray-300 dark:text-gray-600">&middot;</span>
                     <span className="flex-shrink-0">
                       {new Date(s.createdAt).toLocaleDateString()}
@@ -145,7 +202,9 @@ const RecentSongsView: React.FC<RecentSongsViewProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation(); // Confirmation is handled by the parent function
-                    onArchiveSong(s);
+                    if (window.confirm(`Are you sure you want to archive "${s.title}"?`)) {
+                      onArchiveSong(s);
+                    }
                   }}
                   className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
                   title="Archive Song"

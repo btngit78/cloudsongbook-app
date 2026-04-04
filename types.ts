@@ -29,6 +29,7 @@ export interface UserSettings {
   autoRemoveBrokenLinks?: boolean;
   parenthesesStyle?: 'normal' | 'italic' | 'colored';
   favoriteSetlistIds?: string[];
+  inactiveSyncInterval?: 'daily' | 'weekly'; // In minutes, for auto-syncing when app is inactive
 }
 
 export interface Song {

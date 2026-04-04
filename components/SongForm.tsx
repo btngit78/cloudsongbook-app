@@ -71,6 +71,18 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
     setIsDirty(JSON.stringify(formData) !== JSON.stringify(initialData));
   }, [formData, initialData]);
 
+  // Auto-save logic: every 30 minutes if dirty
+  useEffect(() => {
+    if (!isDirty) return;
+
+    const autoSaveInterval = setInterval(() => {
+      console.log("Auto-saving song changes...");
+      handleSave(true); // Keep open
+    }, 30 * 60 * 1000); // 30 minutes
+
+    return () => clearInterval(autoSaveInterval);
+  }, [isDirty, formData]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSave(false); // Default form submission is Save & Exit

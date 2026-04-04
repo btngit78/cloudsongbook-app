@@ -26,6 +26,7 @@ interface SetlistManagerProps {
   onDirtyChange?: (isDirty: boolean) => void;
   initialEditingId?: string | null;
   initialSearchQuery?: string;
+  onConflict?: (local: SetList, remote: SetList) => void;
 }
 
 const getFriendlyDuration = (start: number, end: number) => {
@@ -48,7 +49,7 @@ const getFriendlyDuration = (start: number, end: number) => {
 type SortKey = 'name' | 'updatedAt' | 'lastUsedAt';
 
 const SetlistManager: React.FC<SetlistManagerProps> = ({ 
-  user, setlists, allSongs, currentSong, onSaveSong, onDeleteSong, favoriteSetlistIds, onToggleFavorite, onBulkFavorite, onSave, onArchive, onArchiveSetlists, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = '', batchCount, onQuitBatch, onEditSetlists
+  user, setlists, allSongs, currentSong, onSaveSong, onDeleteSong, favoriteSetlistIds, onToggleFavorite, onBulkFavorite, onSave, onArchive, onArchiveSetlists, onPlay, onClose, onDirtyChange, initialEditingId, initialSearchQuery = '', batchCount, onQuitBatch, onEditSetlists, onConflict
 }) => {
   const [editingId, setEditingId] = useState<string | null>(initialEditingId || null);
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
@@ -112,6 +113,27 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     if (isDuplicate) {
       alert(`A setlist with the name "${name.trim()}" already exists. Please use a unique name.`);
       return;
+    }
+
+    // Optimistic Concurrency Control: Check for conflicts
+    if (!isNew && originalSetlist) {
+      const latestInStore = setlists.find(s => s.id === editingId);
+      if (latestInStore && latestInStore.updatedAt > originalSetlist.updatedAt) {
+        const localVersion: SetList = {
+          id: targetId,
+          name,
+          choices,
+          createdAt: originalSetlist.createdAt,
+          updatedAt: Date.now(),
+          ownerId: originalSetlist.ownerId,
+          lastUsedAt: originalSetlist.lastUsedAt
+        };
+        
+        if (onConflict) {
+          onConflict(localVersion, latestInStore);
+          return;
+        }
+      }
     }
 
     const newSetlist: SetList = {

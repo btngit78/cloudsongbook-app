@@ -150,6 +150,24 @@ const SettingsView: React.FC<SettingsViewProps> = ({ user, onSave, onCancel }) =
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Controls how keys are handled when playing a setlist.</p>
         </div>
 
+        {user.role === UserRole.ADMIN && (
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Inactive Sync Frequency</label>
+              <select
+                aria-label="Inactive Sync Frequency"
+                value={settings.inactiveSyncInterval || 'daily'}
+                onChange={(e) => setSettings({ ...settings, inactiveSyncInterval: e.target.value as 'daily' | 'weekly' })}
+                className="rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm py-1.5"
+              >
+                <option value="daily">Daily (3:00 AM)</option>
+                <option value="weekly">Once a Week</option>
+              </select>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Frequency of background updates when the app is not actively being used.</p>
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Font Size ({settings.fontSize}px)</label>
           <input 

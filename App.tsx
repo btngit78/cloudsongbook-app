@@ -14,6 +14,7 @@ import SongNavigator from './components/SongNavigator';
 import { useTheme } from './hooks/useTheme';
 import RecentSongsView from './components/RecentSongsView';
 import AdminDashboard from './components/AdminDashboard';
+import ConflictResolver from './components/ConflictResolver';
 import { useAuth } from './hooks/useAuth';
 import { useSongs } from './hooks/useSong';
 import { useSetlists } from './hooks/useSetlists';
@@ -126,6 +127,8 @@ const App: React.FC = () => {
   const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
   const [hasUnsavedChanges, _setHasUnsavedChanges] = useState(false);
   const [batchEditQueue, setBatchEditQueue] = useState<Song[]>([]);
+  const [cameFromRecentSongs, setCameFromRecentSongs] = useState(false);
+  const [conflictData, setConflictData] = useState<{ type: 'song' | 'setlist', local: any, remote: any } | null>(null);
   const [batchSetlistEditQueue, setBatchSetlistEditQueue] = useState<string[]>([]);
   // Use a Ref for the navigation guard to prevent stale closure issues during Save & Exit
   const hasUnsavedChangesRef = useRef(false);
@@ -154,6 +157,7 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
+  const lastActivityRef = useRef<number>(Date.now());
   const [showUpdateToast, setShowUpdateToast] = useState(false);
 
   useEffect(() => {
@@ -161,6 +165,56 @@ const App: React.FC = () => {
     if (stored) {
       setLastSyncTime(parseInt(stored, 10));
     }
+  }, []);
+
+  // --- Autosync Strategy Implementation ---
+  useEffect(() => {
+    if (!user) return;
+
+    const checkSyncStatus = async () => {
+      const now = Date.now();
+      const lastSync = lastSyncTime || 0;
+      const timeSinceLastSync = now - lastSync;
+      const timeSinceLastActivity = now - lastActivityRef.current;
+      
+      const isActive = timeSinceLastActivity < 2 * 60 * 60 * 1000; // 2 hours
+      const isSyncDue = timeSinceLastSync >= 2 * 60 * 60 * 1000; // 2 hours
+
+      // 1. Active Sync: Every 2 hours if active
+      if (isActive && isSyncDue && document.visibilityState === 'visible') {
+        console.log("Triggering Active Autosync...");
+        await handleSync();
+        return;
+      }
+
+      // 2. Inactive Sync: 3:00 AM check
+      if (!isActive) {
+        const syncInterval = user.settings.inactiveSyncInterval === 'weekly' 
+          ? 7 * 24 * 60 * 60 * 1000 
+          : 24 * 60 * 60 * 1000;
+
+        // Determine if we've passed the 3:00 AM mark since the last sync
+        const threeAMToday = new Date();
+        threeAMToday.setHours(3, 0, 0, 0);
+        
+        const wasLastSyncBeforeThreeAM = lastSync < threeAMToday.getTime();
+        const isCurrentlyPastThreeAM = now >= threeAMToday.getTime();
+
+        if (timeSinceLastSync >= syncInterval || (wasLastSyncBeforeThreeAM && isCurrentlyPastThreeAM)) {
+          console.log("Triggering Inactive/Daily Autosync...");
+          await handleSync();
+        }
+      }
+    };
+
+    const intervalId = setInterval(checkSyncStatus, 5 * 60 * 1000); // Check every 5 mins
+    checkSyncStatus(); // Initial check on mount
+
+    return () => clearInterval(intervalId);
+  }, [user, lastSyncTime]);
+
+  const trackActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
   }, []);
 
   // Auto-dismiss sync success toast
@@ -213,6 +267,7 @@ const App: React.FC = () => {
       setIsHeaderSearchActive(false);
       return song;
     }
+    trackActivity();
     return null;
   }, [selectSong, hasUnsavedChanges]);
 
@@ -550,6 +605,22 @@ const App: React.FC = () => {
       return;
     }
     const isNew = !songData.id;
+
+    // Optimistic Concurrency Control: Check for conflicts on existing songs
+    if (!isNew && songData.id && songToEdit) {
+      // Refresh local state or check against allSongs to see if a newer version exists
+      const latestInStore = allSongs.find(s => s.id === songData.id);
+      if (latestInStore && latestInStore.updatedAt > songToEdit.updatedAt) {
+        setConflictData({ 
+          type: 'song', 
+          local: { ...songToEdit, ...songData }, 
+          remote: latestInStore 
+        });
+        setView('CONFLICT_RESOLVER' as ViewState);
+        return;
+      }
+    }
+
     // Use existing ownerId if available (editing), otherwise assign to current user (creating)
     const ownerId = songData.ownerId || user.id;
     const savedSong = await saveSong({ ...songData, ownerId });
@@ -572,7 +643,8 @@ const App: React.FC = () => {
         setNewSongForSetlist(savedSong);
         setSongToEdit(undefined);
       } else {
-        setView('SONG_VIEW');
+        setView(cameFromRecentSongs ? 'RECENT_SONGS' : 'SONG_VIEW');
+        setCameFromRecentSongs(false);
         setSongToEdit(undefined); // Clean up state on exit
         clearAddition();
       }
@@ -710,6 +782,7 @@ const App: React.FC = () => {
   const handleEditSongs = (songs: Song[]) => {
     if (songs.length === 0) return;
     const [first, ...rest] = songs;
+    setCameFromRecentSongs(true);
     setBatchEditQueue(rest);
     setSongToEdit(first);
     setHasUnsavedChanges(false);
@@ -808,6 +881,37 @@ const App: React.FC = () => {
     } else {
       setTargetSetlistId(null);
     } 
+  };
+
+  const handleRemoveCurrentSongFromSetlist = async () => {
+    if (!activeSetlist || !currentSong || activeSetlistIndex === undefined || activeSetlistIndex < 0) {
+      return;
+    }
+  
+    const songToRemoveTitle = currentSong.title;
+    const setlistName = activeSetlist.name;
+  
+    if (!window.confirm(`Are you sure you want to remove "${songToRemoveTitle}" from "${setlistName}"?`)) {
+      return;
+    }
+  
+    const newChoices = activeSetlist.choices.filter((_, idx) => idx !== activeSetlistIndex);
+  
+    if (newChoices.length === 0) {
+      // Setlist becomes empty, archive it
+      await saveSetlist({ ...activeSetlist, choices: newChoices, isArchived: true });
+      exitSetlist();
+      handleNavigation('SONG_VIEW'); // Go back to song view
+      setShowUpdateToast(true); // Notify user
+    } else {
+      // Update the setlist with the remaining songs
+      const updatedSetlist = { ...activeSetlist, choices: newChoices };
+      await saveSetlist(updatedSetlist);
+      const nextIndex = Math.min(activeSetlistIndex, newChoices.length - 1); // Adjust index if the last song was removed
+      await playSetlist(updatedSetlist, nextIndex);
+      setShowUpdateToast(true); // Notify user
+    }
+    setMenuOpen(false); // Close the menu after action
   };
 
   const isSearchPinned = useMemo(() => {
@@ -1203,7 +1307,8 @@ const App: React.FC = () => {
             batchCount={batchEditQueue.length}
             onQuitBatch={() => {
               setBatchEditQueue([]);
-              setView('SONG_VIEW');
+              setView(cameFromRecentSongs ? 'RECENT_SONGS' : 'SONG_VIEW');
+              setCameFromRecentSongs(false);
               setSongToEdit(undefined);
             }}
             onCancel={() => {
@@ -1212,7 +1317,8 @@ const App: React.FC = () => {
                 setBatchEditQueue(remaining);
                 setSongToEdit(next);
               } else {
-                setView('SONG_VIEW');
+                setView(cameFromRecentSongs ? 'RECENT_SONGS' : 'SONG_VIEW');
+                setCameFromRecentSongs(false);
                 setSongToEdit(undefined);
                 clearAddition();
               }
@@ -1224,6 +1330,7 @@ const App: React.FC = () => {
             songs={recentSongs.filter(s => !s.isArchived)}
             onSelectSong={handleUserSongSelect}
             onEditSong={(song) => {
+              setCameFromRecentSongs(true);
               setSongToEdit(song);
               setView('SONG_FORM');
             }}
@@ -1231,6 +1338,28 @@ const App: React.FC = () => {
             onBack={() => setView('SONG_VIEW')}
             onArchiveSongs={handleArchiveSongs}
             onEditSongs={handleEditSongs}
+          />
+        )}
+        {view === ('CONFLICT_RESOLVER' as ViewState) && conflictData && (
+          <ConflictResolver
+            type={conflictData.type}
+            local={conflictData.local}
+            remote={conflictData.remote}
+            allSongs={allSongs}
+            onCancel={() => {
+              setConflictData(null);
+              setView(conflictData.type === 'song' ? 'SONG_FORM' : 'SETLIST_MANAGER');
+            }}
+            onResolve={async (choice) => {
+              const dataToSave = choice === 'local' ? conflictData.local : conflictData.remote;
+              setConflictData(null);
+              if (conflictData.type === 'song') {
+                await handleSaveSong(dataToSave);
+              } else {
+                await saveSetlist(dataToSave);
+                setView('SONG_VIEW');
+              }
+            }}
           />
         )}
         {view === 'SETLIST_MANAGER' && (
@@ -1326,6 +1455,10 @@ const App: React.FC = () => {
             onDirtyChange={setHasUnsavedChanges}
             initialEditingId={targetSetlistId}
             initialSearchQuery={adminSetlistFilter}
+            onConflict={(local, remote) => {
+              setConflictData({ type: 'setlist', local, remote });
+              setView('CONFLICT_RESOLVER' as ViewState);
+            }}
           />
         )}
         {view === 'SETTINGS' && (
@@ -1491,6 +1624,17 @@ const App: React.FC = () => {
                         <span className="font-medium">Archive Current Set</span>
                       </button>
                     </>
+                  )}
+                  {(user.role === UserRole.ADMIN || activeSetlist.ownerId === user.id) && (
+                    <button 
+                      onClick={handleRemoveCurrentSongFromSetlist}
+                      disabled={!currentSong}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <i className="fa-solid fa-minus-circle w-6"></i>
+                      <span className="font-medium">Remove Current Song</span>
+                    </button>
+
                   )}
                 <button 
                   onClick={() => { exitSetlist(); setMenuOpen(false); }} // Exit setlist doesn't change view, just state
