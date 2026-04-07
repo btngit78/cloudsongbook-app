@@ -104,6 +104,17 @@ const SetlistManager: React.FC<SetlistManagerProps> = ({
     const targetId = isNew ? Date.now().toString() : editingId!;
     const originalSetlist = isNew ? undefined : setlists.find(s => s.id === editingId);
 
+    // Enforce Setlist limit (50 active setlists for Free and Premium)
+    const isLimitedRole = user?.role === UserRole.FREE || user?.role === UserRole.PREMIUM;
+    if (isNew && isLimitedRole) {
+      const myActiveSetlists = setlists.filter(s => s.ownerId === user?.id && !s.isArchived);
+      if (myActiveSetlists.length >= 50) {
+        alert("Limit Reached: You have reached the limit of 50 active setlists. " +
+              "Perhaps archive some old, unused setlists to make space for new ones?");
+        return;
+      }
+    }
+
     // Ensure name uniqueness within the visible library
     const normalizedName = name.trim().toLowerCase();
     const isDuplicate = setlists.some(s => 

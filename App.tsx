@@ -606,6 +606,16 @@ const App: React.FC = () => {
     }
     const isNew = !songData.id;
 
+    // Enforce Premium song limit (100 active songs)
+    if (isNew && user.role === UserRole.PREMIUM) {
+      const myActiveSongs = allSongs.filter(s => s.ownerId === user.id && !s.isArchived);
+      if (myActiveSongs.length >= 100) {
+        alert("Limit Reached: Premium accounts are limited to 100 active songs. " +
+              "Please archive or delete older songs to add more.");
+        return;
+      }
+    }
+
     // Optimistic Concurrency Control: Check for conflicts on existing songs
     if (!isNew && songData.id && songToEdit) {
       // Refresh local state or check against allSongs to see if a newer version exists

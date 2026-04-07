@@ -1,6 +1,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import {onObjectFinalized} from "firebase-functions/v2/storage";
+import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {StorageObjectData} from "firebase-functions/v2/storage";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import * as path from "path";
@@ -133,10 +134,14 @@ export const syncRoleToUserClaims = onDocumentWritten(
     return null;
   });
 
-export const deleteUser = functions.https.onCall(async (request) => {
+export const deleteUser = onCall({
+  // Explicitly allow common origins to ensure preflight success for
+  // credentialed requests
+  cors: [/localhost:\d+$/, /\.web\.app$/, /\.firebaseapp\.com$/],
+}, async (request) => {
   // 1. Authentication and Authorization
   if (!request.auth) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "unauthenticated",
       "The function must be called while authenticated."
     );
@@ -147,7 +152,7 @@ export const deleteUser = functions.https.onCall(async (request) => {
   const callerData = callerDoc.data();
 
   if (callerData?.role !== "admin") {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "permission-denied",
       "Only admins can delete users."
     );
@@ -156,7 +161,7 @@ export const deleteUser = functions.https.onCall(async (request) => {
   const {userId, contentOption} = request.data;
   if (!userId || !contentOption ||
     !["transfer", "delete"].includes(contentOption)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "invalid-argument",
       "The function must be called with 'userId' and " +
       "'contentOption' ('transfer' or 'delete')."
@@ -164,7 +169,7 @@ export const deleteUser = functions.https.onCall(async (request) => {
   }
 
   if (userId === callerUid) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "invalid-argument",
       "Admins cannot delete themselves."
     );
@@ -211,21 +216,23 @@ export const deleteUser = functions.https.onCall(async (request) => {
     return {success: true, message: `Successfully deleted user ${userId}.`};
   } catch (error) {
     console.error(`Error deleting user ${userId}:`, error);
-    if (error instanceof functions.https.HttpsError) {
+    if (error instanceof HttpsError) {
       throw error;
     }
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "internal",
       "An internal error occurred while deleting the user."
     );
   }
 });
 
-export const sendWelcomeEmail =
-  functions.https.onCall(async (request) => {
+export const sendWelcomeEmail = onCall({
+  cors: [/localhost:\d+$/, /\.web\.app$/, /\.firebaseapp\.com$/],
+}, async (request) => {
+  try {
     // 1. Authentication and Authorization
     if (!request.auth) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "unauthenticated",
         "The function must be called while authenticated."
       );
@@ -236,53 +243,55 @@ export const sendWelcomeEmail =
     const callerData = callerDoc.data();
 
     if (callerData?.role !== "admin") {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "permission-denied",
         "Only admins can perform this action."
       );
     }
 
-    const {userId} = request.data;
+    // Safe destructuring in case request.data is null
+    const data = request.data || {};
+    const userId = data.userId;
+
     if (!userId) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "invalid-argument",
         "The function must be called with a 'userId'."
       );
     }
 
-    try {
-      // 2. Get user details
-      const userDoc = await db.collection("users").doc(userId).get();
-      if (!userDoc.exists) {
-        throw new functions.https.HttpsError("not-found", "User not found.");
-      }
-      const userData = userDoc.data();
-      const userEmail = userData?.email;
-      const userName = userData?.name || "there";
-
-      if (!userEmail) {
-        throw new functions.https.HttpsError(
-          "failed-precondition", "User does not have an email address.");
-      }
-
-      // 3. Send the email (placeholder logic)
-      // In a real app, integrate a service like SendGrid, Mailgun,
-      // or Nodemailer here.
-      functions.logger.log("Simulating sending welcome email to" +
-        `${userEmail} for user ${userId}.`);
-
-      // 4. Update the user document to mark that a welcome email has been sent
-      await db.collection("users").doc(userId).set(
-        {welcomeEmailSentAt: Date.now()}, {merge: true});
-
-      return {success: true, message: `Welcome email sent to ${userName}.`};
-    } catch (error) {
-      console.error(`Error sending welcome email to user ${userId}:`, error);
-      if (error instanceof functions.https.HttpsError) {
-        throw error;
-      }
-
-      throw new functions.https.HttpsError("internal",
-        "An internal error occurred.");
+    // 2. Get user details
+    const userDoc = await db.collection("users").doc(userId).get();
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "User not found.");
     }
-  });
+    const userData = userDoc.data();
+    const userEmail = userData?.email;
+    const userName = userData?.name || "there";
+
+    if (!userEmail) {
+      throw new HttpsError(
+        "failed-precondition", "User does not have an email address.");
+    }
+
+    // 3. Send the email (placeholder logic)
+    // In a real app, integrate a service like SendGrid, Mailgun,
+    // or Nodemailer here.
+    functions.logger.log("Simulating sending welcome email to" +
+      `${userEmail} for user ${userId}.`);
+
+    // 4. Update the user document to mark that a welcome email has been sent
+    await db.collection("users").doc(userId).set(
+      {welcomeEmailSentAt: Date.now()}, {merge: true});
+
+    return {success: true, message: `Welcome email sent to ${userName}.`};
+  } catch (error) {
+    console.error("Error sending welcome email:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+
+    throw new HttpsError("internal",
+      "An internal error occurred.");
+  }
+});

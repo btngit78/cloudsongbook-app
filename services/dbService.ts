@@ -6,7 +6,8 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Song, User, SetList, UserSettings, UserRole } from '../types';
 
-const functions = getFunctions(app);
+// Specify the region explicitly to ensure correct v2 function discovery and CORS proxying
+const functions = getFunctions(app, 'us-central1');
 const deleteUserCallable = httpsCallable(functions, 'deleteUser');
 const sendWelcomeEmailCallable = httpsCallable(functions, 'sendWelcomeEmail');
 
