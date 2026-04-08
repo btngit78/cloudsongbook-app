@@ -29,6 +29,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import UpdatePrompt from './components/UpdatePrompt';
 import OfflineReadyToast from './components/OfflineReadyToast';
 import { getShouldUseFlats, transposeChord } from './utils/musicUtils';
+import { normalizeText } from './utils/searchUtils';
 
 const getRelativeTime = (timestamp: number) => {
   const diffInSeconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -85,6 +86,23 @@ const App: React.FC = () => {
     handleUpdateSettings
   } = useAuth();
 
+  const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false); // Kept in App.tsx
+  const [selectedIndex, setSelectedIndex] = useState(-1); // Kept in App.tsx
+
+  const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
+  const [hasUnsavedChanges, _setHasUnsavedChanges] = useState(false);
+  const [batchEditQueue, setBatchEditQueue] = useState<Song[]>([]);
+  const [cameFromRecentSongs, setCameFromRecentSongs] = useState(false);
+  const [conflictData, setConflictData] = useState<{ type: 'song' | 'setlist', local: any, remote: any } | null>(null);
+  const [batchSetlistEditQueue, setBatchSetlistEditQueue] = useState<string[]>([]);
+  // Use a Ref for the navigation guard to prevent stale closure issues during Save & Exit
+  const hasUnsavedChangesRef = useRef(false);
+
+  const setHasUnsavedChanges = useCallback((val: boolean) => {
+    hasUnsavedChangesRef.current = val;
+    _setHasUnsavedChanges(val);
+  }, []);
+
   const {
     allSongs,
     currentSong,
@@ -95,6 +113,35 @@ const App: React.FC = () => {
     deleteSpecificSong,
     refreshSongs
   } = useSongs(user);
+
+  const handleSelectSong = useCallback(async (songId: string) => {
+    if (hasUnsavedChangesRef.current) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return null;
+      setHasUnsavedChanges(false);
+    }
+
+    const song = await selectSong(songId);
+    if (song) {
+      setView('SONG_VIEW');
+      setSearchQuery('');
+      setIsHeaderSearchActive(false);
+      return song;
+    }
+    trackActivity();
+    return null;
+  }, [selectSong, setHasUnsavedChanges]);
+
+  const {
+    setlists,
+    activeSetlist,
+    activeSetlistIndex,
+    saveSetlist,
+    deleteSetlist,
+    playSetlist,
+    navigateSetlist,
+    exitSetlist,
+    refreshSetlists
+  } = useSetlists(user, (id) => handleSelectSong(id));
 
   const { searchQuery, setSearchQuery, filteredSongs, sortOrder, sortDirection, handleSortChange } = useSongSearch(allSongs);
 
@@ -123,20 +170,167 @@ const App: React.FC = () => {
     }
   }, [offlineReady, setOfflineReady]);
 
+  // --- Augmented Deep Search Logic ("!!") ---
+  const isDeepSearchThrottled = useMemo(() => {
+    if (!searchQuery.endsWith('!!')) return false;
 
-  const [songToEdit, setSongToEdit] = useState<Song | undefined>(undefined);
-  const [hasUnsavedChanges, _setHasUnsavedChanges] = useState(false);
-  const [batchEditQueue, setBatchEditQueue] = useState<Song[]>([]);
-  const [cameFromRecentSongs, setCameFromRecentSongs] = useState(false);
-  const [conflictData, setConflictData] = useState<{ type: 'song' | 'setlist', local: any, remote: any } | null>(null);
-  const [batchSetlistEditQueue, setBatchSetlistEditQueue] = useState<string[]>([]);
-  // Use a Ref for the navigation guard to prevent stale closure issues during Save & Exit
-  const hasUnsavedChangesRef = useRef(false);
+    const baseQuery = searchQuery.slice(0, -2).toLowerCase().trim();
+    if (baseQuery.length < 2) return false;
 
-  const setHasUnsavedChanges = useCallback((val: boolean) => {
-    hasUnsavedChangesRef.current = val;
-    _setHasUnsavedChanges(val);
-  }, []);
+    const tokens = baseQuery.match(/(?:"[^"]*"|[^\s]+)/g) || [];
+    const singerFilters = tokens.filter(t => t.startsWith('s:')).map(t => normalizeText(t.slice(2).replace(/^"(.*)"$/, '$1'))).filter(Boolean);
+    const styleFilters = tokens.filter(t => t.startsWith('y:')).map(t => normalizeText(t.slice(2).replace(/^"(.*)"$/, '$1'))).filter(Boolean);
+    const textFilter = normalizeText(tokens
+      .filter(t => !t.startsWith('s:') && !t.startsWith('y:'))
+      .map(t => t.startsWith('"') ? t.slice(1, -1) : t)
+      .join(' '));
+    const hasPrefix = singerFilters.length > 0 || styleFilters.length > 0;
+    const normalizedBase = normalizeText(baseQuery);
+
+    // Perform base search manually (excluding the "!!" suffix)
+    const baseMatches = allSongs.filter(s => {
+      if (s.isArchived) return false;
+
+      if (!hasPrefix) {
+        const songMatches = normalizeText(s.title).includes(normalizedBase) || 
+                            normalizeText(s.authors).includes(normalizedBase);
+        if (songMatches) return true;
+
+        return setlists.some(sl => !sl.isArchived && sl.choices.some(c => 
+          c.songId === s.id && (
+            (normalizeText(c.singer).includes(normalizedBase)) || 
+            (normalizeText(c.style).includes(normalizedBase))
+          )
+        ));
+      }
+
+      const textMatches = !textFilter || normalizeText(s.title).includes(textFilter) || normalizeText(s.authors).includes(textFilter);
+      if (!textMatches) return false;
+
+      return setlists.some(sl => !sl.isArchived && sl.choices.some(c => 
+        c.songId === s.id && 
+        singerFilters.every(f => normalizeText(c.singer).includes(f)) &&
+        styleFilters.every(f => normalizeText(c.style).includes(f))
+      ));
+    });
+
+    if (baseMatches.length === 0) return false;
+
+    // Calculate distinct "base" titles by stripping trailing parentheses (e.g., "Song (1)" -> "Song")
+    const distinctBaseTitles = new Set(
+      baseMatches.map(s => normalizeText(s.title).replace(/\s*\(.*?\)$/, ''))
+    );
+
+    // Logic for throttling:
+    // 1. More than 5 distinct songs found
+    // 2. Total matches 50 or more (to handle versions/postfix differences)
+    return (distinctBaseTitles.size > 5 || baseMatches.length >= 50);
+  }, [searchQuery, allSongs]);
+
+  const displayedResults = useMemo(() => {
+    const isDeepSearch = searchQuery.endsWith('!!');
+    if (!isDeepSearch) return filteredSongs;
+
+    const baseQuery = searchQuery.slice(0, -2).toLowerCase().trim();
+    if (baseQuery.length < 2) return filteredSongs;
+
+    const tokens = baseQuery.match(/(?:"[^"]*"|[^\s]+)/g) || [];
+    const singerFilters = tokens.filter(t => t.startsWith('s:')).map(t => normalizeText(t.slice(2).replace(/^"(.*)"$/, '$1'))).filter(Boolean);
+    const styleFilters = tokens.filter(t => t.startsWith('y:')).map(t => normalizeText(t.slice(2).replace(/^"(.*)"$/, '$1'))).filter(Boolean);
+    const textFilter = normalizeText(tokens
+      .filter(t => !t.startsWith('s:') && !t.startsWith('y:'))
+      .map(t => t.startsWith('"') ? t.slice(1, -1) : t)
+      .join(' '));
+    const hasPrefix = singerFilters.length > 0 || styleFilters.length > 0;
+    const normalizedBase = normalizeText(baseQuery);
+
+    // Perform base search manually (excluding the "!!" suffix)
+    const baseMatches = allSongs.filter(s => {
+      if (s.isArchived) return false;
+
+      if (!hasPrefix) {
+        const songMatches = normalizeText(s.title).includes(normalizedBase) || 
+                            normalizeText(s.authors).includes(normalizedBase);
+        if (songMatches) return true;
+
+        return setlists.some(sl => !sl.isArchived && sl.choices.some(c => 
+          c.songId === s.id && (
+            (normalizeText(c.singer).includes(normalizedBase)) || 
+            (normalizeText(c.style).includes(normalizedBase))
+          )
+        ));
+      }
+
+      const textMatches = !textFilter || normalizeText(s.title).includes(textFilter) || normalizeText(s.authors).includes(textFilter);
+      if (!textMatches) return false;
+
+      return setlists.some(sl => !sl.isArchived && sl.choices.some(c => 
+        c.songId === s.id && 
+        singerFilters.every(f => normalizeText(c.singer).includes(f)) &&
+        styleFilters.every(f => normalizeText(c.style).includes(f))
+      ));
+    });
+
+    if (baseMatches.length === 0) return [];
+
+    // Calculate distinct "base" titles by stripping trailing parentheses (e.g., "Song (1)" -> "Song")
+    const distinctBaseTitles = new Set(
+      baseMatches.map(s => normalizeText(s.title).replace(/\s*\(.*?\)$/, ''))
+    );
+
+    // Only do deep search if results are focused:
+    // 1. 5 or fewer distinct songs found
+    // 2. Total matches under 50 (to handle versions/postfix differences)
+    if (distinctBaseTitles.size > 5 || baseMatches.length >= 50) {
+      return baseMatches;
+    }
+
+    const results: any[] = [];
+
+    baseMatches.forEach(song => {
+      // 1. Add the base song entry
+      results.push({
+        ...song,
+        isSetlistInstance: false,
+      });
+
+      // 2. Find and group all setlist occurrences for THIS specific song
+      setlists.forEach(setlist => {
+        if (setlist.isArchived) return;
+        
+        setlist.choices.forEach((choice, index) => {
+          if (choice.songId === song.id) {
+            // If specific filters are used, this specific setlist choice must match them
+            if (hasPrefix) {
+              const singerOk = singerFilters.every(f => normalizeText(choice.singer).includes(f));
+              const styleOk = styleFilters.every(f => normalizeText(choice.style).includes(f));
+              if (!singerOk || !styleOk) return;
+            }
+
+            results.push({
+              ...song,
+              // Create a unique composite ID for this specific setlist instance
+              id: `sl-instance-${setlist.id}-${index}-${song.id}`,
+              isSetlistInstance: true,
+              setlistId: setlist.id,
+              setlistName: setlist.name,
+              setlistIndex: index,
+              songTitle: song.title,
+              title: setlist.name,
+              authors: '', // Clear authors to emphasize the relationship
+              // Alignment: Override standard key/tempo with setlist-specific choice
+              key: choice.key || song.key,
+              tempo: choice.tempo || song.tempo,
+              singer: choice.singer,
+              style: choice.style
+            });
+          }
+        });
+      });
+    });
+
+    return results;
+  }, [searchQuery, filteredSongs, allSongs, setlists]);
 
   const [recentlyViewed, setRecentlyViewed] = useState<Song[]>([]);
   const [recentlyPlayedSetlists, setRecentlyPlayedSetlists] = useState<SetList[]>([]);
@@ -234,8 +428,6 @@ const App: React.FC = () => {
   const [newSetlistName, setNewSetlistName] = useState('');
   const [editSetlistImmediately, setEditSetlistImmediately] = useState(true);
   const [targetSetlistId, setTargetSetlistId] = useState<string | null>(null); // Kept in App.tsx
-  const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false); // Kept in App.tsx
-  const [selectedIndex, setSelectedIndex] = useState(-1); // Kept in App.tsx
   const [pinnedSearchQuery, setPinnedSearchQuery] = useState<string>('');
   const preEditSongIdRef = useRef<string | null>(null);
   // Auto-scroll state lifted from SongViewer
@@ -254,34 +446,6 @@ const App: React.FC = () => {
       setLocalShowChords(user.settings.showChords);
     }
   }, [user?.id]); // Only run when user ID changes (i.e., on login/logout)
-
-  const handleSelectSong = useCallback(async (songId: string) => {
-    if (hasUnsavedChangesRef.current) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return null;
-      setHasUnsavedChanges(false);
-    }
-    const song = await selectSong(songId);
-    if (song) {
-      setView('SONG_VIEW');
-      setSearchQuery('');
-      setIsHeaderSearchActive(false);
-      return song;
-    }
-    trackActivity();
-    return null;
-  }, [selectSong, hasUnsavedChanges]);
-
-  const {
-    setlists,
-    activeSetlist,
-    activeSetlistIndex,
-    saveSetlist,
-    deleteSetlist,
-    playSetlist,
-    navigateSetlist,
-    exitSetlist,
-    refreshSetlists
-  } = useSetlists(user, handleSelectSong);
 
   // Add active setlist to recently played cache whenever it changes
   useEffect(() => {
@@ -434,6 +598,23 @@ const App: React.FC = () => {
 
   const handleUserSongSelect = async (songId: string) => { // already async
     setCameFromAdminSongSearch(false); // When a song is selected, we are done with the admin-initiated search.
+
+    // Handle navigation for virtual setlist instances
+    if (songId.startsWith('sl-instance-')) {
+      const instance = displayedResults.find(r => r.id === songId);
+      if (instance && instance.setlistId) {
+        const targetSetlist = setlists.find(s => s.id === instance.setlistId);
+        if (targetSetlist) {
+          await playSetlist(targetSetlist, instance.setlistIndex);
+          setView('SONG_VIEW');
+          setMenuOpen(false);
+          setSearchQuery('');
+          setIsHeaderSearchActive(false);
+          return;
+        }
+      }
+    }
+
     if (activeSetlist) {
       const index = activeSetlist.choices.findIndex(c => c.songId === songId);
       if (index !== -1) {
@@ -456,14 +637,14 @@ const App: React.FC = () => {
     
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev < filteredSongs.length - 1 ? prev + 1 : prev));
+      setSelectedIndex(prev => (prev < displayedResults.length - 1 ? prev + 1 : prev));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex(prev => (prev > -1 ? prev - 1 : -1));
     } else if (e.key === 'Enter') {
-      if (selectedIndex >= 0 && filteredSongs[selectedIndex]) {
+      if (selectedIndex >= 0 && displayedResults[selectedIndex]) {
         e.preventDefault();
-        handleUserSongSelect(filteredSongs[selectedIndex].id);
+        handleUserSongSelect(displayedResults[selectedIndex].id);
       }
     }
   };
@@ -1247,10 +1428,10 @@ const App: React.FC = () => {
               </button>
               
               {/* Create Setlist from Search Button (Admin/Premium only) */}
-              {(user.role === UserRole.ADMIN || user.role === UserRole.PREMIUM) && filteredSongs.length > 0 && (
+              {(user.role === UserRole.ADMIN || user.role === UserRole.PREMIUM) && displayedResults.length > 0 && (
                 <button 
                   onClick={() => {
-                    setSongsForSetlist(filteredSongs);
+                    setSongsForSetlist(displayedResults.filter(r => !r.isSetlistInstance));
                     setNewSetlistName(`Search Results - ${new Date().toLocaleDateString()}`);
                     setShowCreateSetlistModal(true);
                   }}
@@ -1264,11 +1445,12 @@ const App: React.FC = () => {
               </div>
             </div>
             <SongList 
-              songs={filteredSongs} 
+              songs={displayedResults} 
               searchQuery={searchQuery}
               selectedIndex={selectedIndex}
               onSongClick={(song) => handleUserSongSelect(song.id)}
               highlightSearch={user?.settings.highlightSearch ?? false}
+              isDeepSearchThrottled={isDeepSearchThrottled}
             />
           </>
         ) : (

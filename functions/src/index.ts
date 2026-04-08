@@ -1,4 +1,5 @@
 import * as functions from "firebase-functions";
+import {logger} from "firebase-functions";
 import * as admin from "firebase-admin";
 import {onObjectFinalized} from "firebase-functions/v2/storage";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
@@ -137,7 +138,7 @@ export const syncRoleToUserClaims = onDocumentWritten(
 export const deleteUser = onCall({
   // Explicitly allow common origins to ensure preflight success for
   // credentialed requests
-  cors: [/localhost:\d+$/, /\.web\.app$/, /\.firebaseapp\.com$/],
+  cors: true,
 }, async (request) => {
   // 1. Authentication and Authorization
   if (!request.auth) {
@@ -227,7 +228,7 @@ export const deleteUser = onCall({
 });
 
 export const sendWelcomeEmail = onCall({
-  cors: [/localhost:\d+$/, /\.web\.app$/, /\.firebaseapp\.com$/],
+  cors: true,
 }, async (request) => {
   try {
     // 1. Authentication and Authorization
@@ -277,8 +278,8 @@ export const sendWelcomeEmail = onCall({
     // 3. Send the email (placeholder logic)
     // In a real app, integrate a service like SendGrid, Mailgun,
     // or Nodemailer here.
-    functions.logger.log("Simulating sending welcome email to" +
-      `${userEmail} for user ${userId}.`);
+    logger.log(`Simulating sending welcome email to ${userEmail} ` +
+      `for user ${userId}.`);
 
     // 4. Update the user document to mark that a welcome email has been sent
     await db.collection("users").doc(userId).set(
@@ -286,7 +287,7 @@ export const sendWelcomeEmail = onCall({
 
     return {success: true, message: `Welcome email sent to ${userName}.`};
   } catch (error) {
-    console.error("Error sending welcome email:", error);
+    logger.error("Error sending welcome email:", error);
     if (error instanceof HttpsError) {
       throw error;
     }
