@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Song, Languages } from '../types';
 import { useMetronome } from '../hooks/useMetronome.ts';
 import { PdfUploader } from './PdfUploader';
 import { storageService } from '../services/storageService';
+import ChordAssistantModal from './ChordAssistantModal';
 
 
 interface SongFormProps {
@@ -37,7 +38,9 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
   const [keywordsInput, setKeywordsInput] = useState('');
   const [errors, setErrors] = useState<Partial<Record<keyof Song, string>>>({});
   const [error, setError] = useState<string | null>(null);
+  const [showChordAssistant, setShowChordAssistant] = useState(false);
   const [searchProvider, setSearchProvider] = useState<'auto' | 'hopamviet' | 'ultimate' | 'google'>('auto');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { 
     tempo: metronomeTempo, 
@@ -134,6 +137,40 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
 
     onSave(processedData, keepOpen);
   };
+
+  const handleChordInsert = useCallback((chord: string) => {
+    if (!textareaRef.current) return;
+
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = formData.body || '';
+    
+    // Check if cursor is inside [brackets]
+    const lastOpen = text.lastIndexOf('[', start - 1);
+    const lastClose = text.lastIndexOf(']', start - 1);
+    const nextClose = text.indexOf(']', start);
+    const nextOpen = text.indexOf('[', start);
+
+    let newText: string;
+    let newCursorPos: number;
+
+    const isInside = lastOpen !== -1 && (lastOpen > lastClose) && nextClose !== -1 && (nextOpen === -1 || nextClose < nextOpen);
+
+    if (isInside) {
+      newText = text.substring(0, lastOpen) + `[${chord}]` + text.substring(nextClose + 1);
+      newCursorPos = lastOpen + chord.length + 2;
+    } else {
+      newText = text.substring(0, start) + `[${chord}]` + text.substring(end);
+      newCursorPos = start + chord.length + 2;
+    }
+
+    setFormData(prev => ({ ...prev, body: newText }));
+    setTimeout(() => {
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+      textarea.focus();
+    }, 0);
+  }, [formData.body]);
 
   const handleLyricsSearch = () => {
     if (!formData.title?.trim()) return;
@@ -379,7 +416,8 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
 
         {/* PDF Toggle & Lyrics Search */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="md:col-span-3 flex items-center space-x-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">
+          {/* PDF Checkbox Area - now md:col-span-2 */}
+          <div className="md:col-span-2 flex items-center space-x-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">
             <input
               id="pdf-check"
               type="checkbox"
@@ -388,32 +426,45 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
               onChange={e => setFormData({ ...formData, isPdf: e.target.checked })}
             />
             <label htmlFor="pdf-check" className="text-sm font-bold text-blue-900 dark:text-blue-100 select-none cursor-pointer">
-              This song uses a PDF file instead of ChordPro-like text
+              Check this box to upload a PDF file instead.
             </label>
           </div>
 
-          <div className="md:col-span-1 flex flex-col gap-2">
-            <select
-              aria-label="Search Provider"
-              className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs p-2 focus:ring-2 focus:ring-blue-500 transition-all"
-              value={searchProvider}
-              onChange={e => setSearchProvider(e.target.value as any)}
-            >
-              <option value="auto">Auto-detect</option>
-              <option value="hopamviet">Hop Am Viet</option>
-              <option value="ultimate">Ultimate Guitar</option>
-              <option value="google">Google Search</option>
-            </select>
+          {/* Container for Chord Assistant and Lyrics Search Group - now md:col-span-2 */}
+          <div className="md:col-span-2 flex flex-col md:flex-row gap-2">
+            {/* Chord Assistant Button - Left Side */}
             <button
               type="button"
-              onClick={handleLyricsSearch}
-              disabled={!formData.title?.trim()}
-              className="flex-1 flex items-center justify-center gap-2 px-5 py-2 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-2xl border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              title={searchLabel}
+              onClick={() => setShowChordAssistant(!showChordAssistant)}
+              className={`w-full md:flex-1 flex items-center justify-center gap-2 px-4 py-3 font-bold rounded-2xl border transition-all ${showChordAssistant ? 'bg-indigo-600 text-white border-indigo-700 shadow-inner' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'}`}
             >
-              <i className="fa-solid fa-magnifying-glass"></i>
-              Search for lyrics
+              <i className="fa-solid fa-guitar"></i> Chord Assistant
             </button>
+
+            {/* Vertical group for Lyrics Search and Provider selection - Right Side */}
+            <div className="w-full md:flex-1 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleLyricsSearch}
+                disabled={!formData.title?.trim()}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-2xl border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                title={searchLabel}
+              >
+                <i className="fa-solid fa-magnifying-glass"></i>
+                Search for lyrics
+              </button>
+              <select
+                aria-label="Search Provider"
+                className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs p-2 focus:ring-2 focus:ring-blue-500 transition-all"
+                value={searchProvider}
+                onChange={e => setSearchProvider(e.target.value as any)}
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="hopamviet">Hop Am Viet</option>
+                <option value="ultimate">Ultimate Guitar</option>
+                <option value="google">Google Search</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -435,6 +486,7 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
             <div className="space-y-2">
               <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">Lyrics & Chords (ChordPro-like format)</label>
               <textarea
+                ref={textareaRef}
                 rows={15}
                 required={!formData.isPdf}
                 placeholder="[G]Amazing [G7]grace! How [C]sweet the [G]sound..."
@@ -475,6 +527,30 @@ const SongForm: React.FC<SongFormProps> = ({ song, onSave, onCancel, batchCount,
           </button>
         </div>
       </form>
+
+      {showChordAssistant && !formData.isPdf && (
+        <ChordAssistantModal
+          songKey={formData.key || 'C'}
+          songBody={formData.body || ''}
+          onInsert={handleChordInsert}
+          onRemove={() => {
+             if (!textareaRef.current) return;
+             const text = formData.body || '';
+             const start = textareaRef.current.selectionStart;
+             const lastOpen = text.lastIndexOf('[', start - 1);
+             const lastClose = text.lastIndexOf(']', start - 1);
+             const nextClose = text.indexOf(']', start);
+             const nextOpen = text.indexOf('[', start);
+             if (lastOpen !== -1 && (lastOpen > lastClose) && nextClose !== -1 && (nextOpen === -1 || nextClose < nextOpen)) {
+               const newBody = text.substring(0, lastOpen) + text.substring(nextClose + 1);
+               setFormData(prev => ({ ...prev, body: newBody }));
+             }
+          }}
+          onUpdateBody={(newBody) => setFormData(prev => ({ ...prev, body: newBody }))}
+          onUpdateKey={(newKey) => setFormData(prev => ({ ...prev, key: newKey }))}
+          onClose={() => setShowChordAssistant(false)}
+        />
+      )}
     </div>
   );
 };

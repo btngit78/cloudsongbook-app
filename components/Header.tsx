@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
       if (inputValue !== searchQuery) {
         setSearchQuery(inputValue);
       }
-    }, 170);
+    }, 70);
     return () => clearTimeout(timer);
   }, [inputValue, setSearchQuery, searchQuery]);
 
