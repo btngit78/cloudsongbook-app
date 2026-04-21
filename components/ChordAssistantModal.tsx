@@ -17,8 +17,8 @@ const FLAT_MAP: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', '
 const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
 const MINOR_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
 
-const ADV_EXTENSIONS = ["sus", "7", "M7", "m7", "9", "M9", "m9", "11", "m11", "6", "13", "M13", "dim7", "7-Alt"];
-const ADD_TO_EXTENSIONS = ["+7","+5", "-5", "+9", "-9", "+11", "(2)", "(9)", "(4)", "sus"];
+const ADV_EXTENSIONS = ["", "sus", "7", "M7", "m7", "9", "M9", "m9", "11", "m11", "6", "m6","13", "M13", "dim7", "7-Alt"];
+const ADD_TO_EXTENSIONS = ["+7","+5", "-5", "+9", "-9", "+11", "(2)", "(6)", "(9)", "(4)", "sus"];
 
 const getDiatonicSet = (songKey: string, isAdvanced: boolean, useFlats: boolean) => {
   const isMinor = songKey.endsWith('m');
@@ -95,6 +95,7 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
   const [manualChords, setManualChords] = useState<string[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [newChordText, setNewChordText] = useState('');
+  const [activeShortcutKey, setActiveShortcutKey] = useState<string | null>(null);
   const [addChordInput, setAddChordInput] = useState('');
   const [useFlats, setUseFlats] = useState(isTraditionallyFlatKey(songKey));
   const [isAdvanced, setIsAdvanced] = useState(false);
@@ -102,7 +103,8 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
   const [renameTarget, setRenameTarget] = useState<{ oldChord: string; newChord: string; count: number } | null>(null);
   const [variationTarget, setVariationTarget] = useState<string | null>(null);
   const [history, setHistory] = useState<{ body: string; manual: string[] }[]>([]);
-  const hoverTimerRef = useRef<number | null>(null);
+  const variationCloseTimerRef = useRef<number | null>(null);
+  const clickTimeoutRef = useRef<number | null>(null);
 
   // Sync flat preference when the song key changes in the parent form
   useEffect(() => {
@@ -180,29 +182,6 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
     });
   }, [songKey, useFlats]);
 
-  // Handle Draggable
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragOffset({ x: e.clientX - pos.x, y: e.clientY - pos.y });
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      setPos({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
-    };
-    const handleMouseUp = () => setIsDragging(false);
-
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
-
   // Keyboard Shortcuts (1-7)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -214,14 +193,24 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
         return;
       }
 
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        setActiveShortcutKey('Delete');
+        setTimeout(() => setActiveShortcutKey(null), 200);
+        performAction(onRemove);
+        return;
+      }
+
       const num = parseInt(e.key);
       if (num >= 1 && num <= 7 && diatonicChords[num - 1]) {
+        setActiveShortcutKey(e.key);
+        setTimeout(() => setActiveShortcutKey(null), 200);
         performAction(() => onInsert(diatonicChords[num - 1]));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [diatonicChords, onInsert]);
+  }, [diatonicChords, onInsert, onRemove, performAction, handleUndo]);
 
   const handleGlobalRename = (oldChord: string, newChord: string) => {
     setEditingIndex(null);
@@ -293,21 +282,128 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
     setVariationTarget(null);
   };
 
+  const gridLayout = useMemo(() => {
+    const keyRoot = songKey.replace('m', '');
+    const isMinor = songKey.endsWith('m');
+    const intervals = isMinor ? MINOR_INTERVALS : MAJOR_INTERVALS;
+    
+    // Map chromatic offsets (0-11) to column indices (0-6)
+    const offsetToCol: Record<number, number> = {};
+    intervals.forEach((interval, i) => {
+      offsetToCol[interval] = i;
+    });
+
+    const matrix: (string[] | null)[][] = [Array(7).fill(null)];
+    const nonDiatonicGroups: string[][] = [];
+
+    groupedChords.forEach(group => {
+      const root = getRoot(group[0]);
+      const offset = getChromaticIndex(root, keyRoot);
+      const col = offsetToCol[offset];
+
+      if (col !== undefined) {
+        matrix[0][col] = group;
+      } else {
+        nonDiatonicGroups.push(group);
+      }
+    });
+
+    // Fill subsequent rows with non-diatonic groups
+    for (let i = 0; i < nonDiatonicGroups.length; i += 7) {
+      matrix.push(nonDiatonicGroups.slice(i, i + 7).concat(Array(Math.max(0, 7 - (nonDiatonicGroups.length - i))).fill(null)));
+    }
+
+    return matrix;
+  }, [groupedChords, songKey]);
+
+  // Handle single vs double click for the main chord button
+  const handleMainChordClick = (chord: string) => {
+    if (clickTimeoutRef.current) {
+      window.clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+      return; // It's a double click, handled by onDoubleClick
+    }
+
+    clickTimeoutRef.current = window.setTimeout(() => {
+      performAction(() => onInsert(chord));
+      clickTimeoutRef.current = null;
+    }, 200);
+  };
+
+  const startVariationCloseTimer = () => {
+    variationCloseTimerRef.current = window.setTimeout(() => setVariationTarget(null), 500);
+  };
+
+  const cancelVariationCloseTimer = () => {
+    if (variationCloseTimerRef.current) {
+      window.clearTimeout(variationCloseTimerRef.current);
+      variationCloseTimerRef.current = null;
+    }
+  };
+
+  const renderChordButton = (chord: string) => {
+    const idx = palette.indexOf(chord);
+    const dIdx = diatonicChords.indexOf(chord);
+    const isFlashing = dIdx !== -1 && activeShortcutKey === (dIdx + 1).toString();
+    
+    return (
+      <div key={chord} className="relative group flex items-stretch min-h-[36px]">
+        {editingIndex === idx ? (
+          <input
+            autoFocus
+            className={`w-full text-center font-bold border rounded bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 ${isCompact ? 'py-1 text-[10px]' : 'py-2 text-xs'}`}
+            value={newChordText}
+            onChange={e => setNewChordText(e.target.value)}
+            onBlur={() => handleGlobalRename(chord, newChordText)}
+            onKeyDown={e => e.key === 'Enter' && handleGlobalRename(chord, newChordText)}
+          />
+        ) : (
+          <div className={`flex w-full rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 hover:border-blue-300 transition-all duration-200 ease-in-out group/btn shadow-sm ${dIdx !== -1 ? 'ring-1 ring-indigo-500/20 border-indigo-200' : ''} ${isFlashing ? 'ring-2 ring-indigo-600 bg-indigo-50 dark:bg-indigo-900/40 scale-95 shadow-lg' : ''}`}>
+            <button
+              onClick={() => handleMainChordClick(chord)}
+              onDoubleClick={() => {
+                setEditingIndex(idx);
+                setNewChordText(chord);
+              }}
+              title="Click to insert, Double-click to rename all"
+              className={`flex-1 font-bold hover:bg-gray-50 dark:hover:bg-gray-700 text-blue-600 dark:text-amber-400 truncate ${isCompact ? 'py-1 text-[10px]' : 'py-2 text-xs'}`}
+            >
+              {chord}
+              {dIdx !== -1 && (
+                <span className="absolute -top-1.5 left-1 text-[8px] bg-indigo-600 text-white px-1 rounded-full font-black z-10 shadow-sm">
+                  {dIdx + 1}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setVariationTarget(chord);
+              }}
+              className="w-6 flex items-center justify-center border-l border-gray-100 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-300 hover:text-indigo-500 transition-colors"
+              title="Show variations"
+            >
+              <i className="fa-solid fa-chevron-right text-[8px]"></i>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div 
-      style={{ left: pos.x, top: pos.y }}
-      className="fixed z-[100] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl rounded-2xl flex flex-col min-w-[320px] max-w-[600px] overflow-hidden resize select-none"
-    >
+    <div className="fixed top-0 left-0 w-full z-[100] bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col transition-all animate-slideInDown max-h-[70vh] overflow-hidden resize-y select-none">
       {/* Header */}
-      <div 
-        onMouseDown={handleMouseDown}
-        className="bg-gray-100 dark:bg-gray-800 p-3 flex justify-between items-center cursor-move border-b border-gray-200 dark:border-gray-700"
-      >
+      <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-sm text-gray-700 dark:text-gray-300 truncate max-w-[100px] md:max-w-none">
-            <i className="fa-solid fa-guitar mr-1"></i> ({songKey})
+          <span className="font-black text-xs text-indigo-600 dark:text-indigo-400 uppercase tracking-widest border-r border-gray-300 dark:border-gray-600 pr-3 mr-1">
+            <i className="fa-solid fa-guitar mr-1.5"></i> Chord Assistant
           </span>
-          <div className="flex gap-1.5">
+          <span className="font-bold text-sm text-gray-700 dark:text-gray-300">
+            Key: {songKey}
+          </span>
+          <div className="flex gap-1.5 ml-2">
             <button 
               type="button"
               onClick={() => setIsAdvanced(!isAdvanced)}
@@ -325,6 +421,7 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 mr-4 italic hidden md:block">Double-click to rename • 1-7 shortcuts • Del to remove</span>
           {history.length > 0 && (
             <button 
               onClick={handleUndo}
@@ -334,114 +431,72 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
               <i className="fa-solid fa-rotate-left"></i>
             </button>
           )}
-          <button title="Close" onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors">
-            <i className="fa-solid fa-xmark"></i>
+          <button title="Close Assistant" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-red-500 hover:text-white transition-all">
+            <i className="fa-solid fa-xmark text-lg"></i>
           </button>
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-y-auto max-h-[400px]">
-        <div className={`flex flex-col mb-4 ${isCompact ? 'pt-1' : 'pt-2'}`}>
-          {groupedChords.map((group, gIdx) => (
-            <div 
-              key={gIdx} 
-              className={`grid grid-cols-4 px-4 transition-all ${isCompact ? 'gap-1 py-0.5' : 'gap-2 py-1.5'} ${gIdx % 2 === 0 ? 'bg-gray-50 dark:bg-white/[0.04]' : ''}`}
-              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${isCompact ? '55px' : '70px'}, 1fr))` }}
-            >
-              {group.map((chord) => {
-                const idx = palette.indexOf(chord);
-                const dIdx = diatonicChords.indexOf(chord);
-                
-                return (
-                  <div key={idx} className="relative group">
-                    {editingIndex === idx ? (
-                      <input
-                        autoFocus
-                        className={`w-full text-center font-bold border rounded bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 ${isCompact ? 'py-1 text-[10px]' : 'py-2 text-xs'}`}
-                        value={newChordText}
-                        onChange={e => setNewChordText(e.target.value)}
-                        onBlur={() => handleGlobalRename(chord, newChordText)}
-                        onKeyDown={e => e.key === 'Enter' && handleGlobalRename(chord, newChordText)}
-                      />
-                    ) : (
-                      <button
-                        onClick={() => performAction(() => onInsert(chord))}
-                        onDoubleClick={() => {
-                          setEditingIndex(idx);
-                          setNewChordText(chord);
-                        }}
-                        onMouseEnter={() => {
-                          hoverTimerRef.current = window.setTimeout(() => setVariationTarget(chord), 500);
-                        }}
-                        onMouseLeave={() => {
-                          if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current);
-                        }}
-                        title="Click to insert, Double-click to rename all"
-                        className={`w-full font-bold bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-300 transition-all text-blue-600 dark:text-amber-400 ${isCompact ? 'py-1 text-[10px]' : 'py-2 text-xs'}`}
-                      >
-                        {chord}
-                        {dIdx !== -1 && (
-                          <span className="absolute -top-1 -right-1 text-[8px] bg-indigo-100 dark:bg-indigo-900/50 px-1 rounded text-indigo-600 dark:text-indigo-400 font-black z-10">
-                            {dIdx + 1}
-                          </span>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-
-        {/* Bottom Actions */}
-        <div className="flex flex-col gap-3 px-4 pt-3 pb-4 border-t border-gray-100 dark:border-gray-800">
+      {/* Functional Action Bar - Moved to top, under header */}
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 border-r border-gray-200 dark:border-gray-700 pr-4">
           <button
             onClick={() => performAction(onRemove)}
-            className="w-full py-2 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 transition-all border border-red-100 dark:border-red-900/30"
+            className={`px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 transition-all duration-200 ease-in-out border border-red-100 dark:border-red-900/30 flex items-center gap-2 whitespace-nowrap ${activeShortcutKey === 'Delete' ? 'ring-2 ring-red-500 dark:ring-red-400 bg-red-200 dark:bg-red-900/60 scale-95 shadow-md' : ''}`}
+            title="Remove chord at cursor (Shortcut: Delete)"
           >
-            <i className="fa-solid fa-eraser mr-2"></i> Remove Chord at Cursor
+            <i className="fa-solid fa-eraser"></i> 
+            <span className="hidden lg:inline">Remove Chord at Cursor</span>
+            <span className="lg:hidden">Remove</span>
           </button>
+        </div>
           
-          <div className="flex gap-2">
+        <div className="flex items-center gap-2 border-r border-gray-200 dark:border-gray-700 pr-4">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest hidden sm:block">Transpose</span>
+          <div className="flex bg-gray-100 dark:bg-gray-700 p-0.5 rounded-lg">
             <button
               onClick={() => handleTranspose(-1)}
-              className="flex-1 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all border border-gray-200 dark:border-gray-700"
-              title="Transpose whole song down 1 semitone"
+              className="px-3 py-1 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600 rounded transition-all"
+              title="Down 1 semitone"
             >
-              <i className="fa-solid fa-arrow-down mr-1"></i> Transpose -1
+              -1
             </button>
             <button
               onClick={() => handleTranspose(1)}
-              className="flex-1 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all border border-gray-200 dark:border-gray-700"
-              title="Transpose whole song up 1 semitone"
+              className="px-3 py-1 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600 rounded transition-all"
+              title="Up 1 semitone"
             >
-              <i className="fa-solid fa-arrow-up mr-1"></i> Transpose +1
+              +1
             </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleNormalize}
-              className="flex-1 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all border border-gray-200 dark:border-gray-700"
-              title="Standardize chord capitalization and notation across the song"
+            className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg hover:bg-indigo-100 border border-indigo-100 dark:border-indigo-900/30 transition-all flex items-center gap-2 whitespace-nowrap"
+            title="Normalize chord notation"
             >
-              <i className="fa-solid fa-wand-magic-sparkles mr-1"></i> Normalize
+            <i className="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Normalize</span>
             </button>
+
             <button
               type="button"
               onClick={handleToggleFlats}
-              className={`px-3 py-2 text-xs font-black rounded-lg border transition-all ${useFlats ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400' : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'}`}
+            className={`w-10 h-10 text-sm font-black rounded-full border transition-all shadow-sm ${useFlats ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400' : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'}`}
               title={useFlats ? "Currently preferring Flats (b). Click to use Sharps (#)." : "Currently preferring Sharps (#). Click to use Flats (b)."}
             >
               {useFlats ? 'b' : '#'}
             </button>
-          </div>
+        </div>
 
-          <div className="flex gap-2">
+        <div className="flex-1 flex gap-2 min-w-[200px]">
             <input
               type="text"
-              placeholder="Enter new chord..."
-              className="flex-1 text-xs p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            placeholder="Add specific chord (e.g. G/B)..."
+            className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               value={addChordInput}
               onChange={e => setAddChordInput(e.target.value)}
               onKeyDown={e => {
@@ -458,21 +513,41 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
                   setAddChordInput('');
                 }
               }}
-              className="px-4 py-2 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all"
+              className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all"
             >
               Add
             </button>
-          </div>
+        </div>
+      </div>
+
+      {/* Main Grid Content - Organized into 7 horizontal columns (Desktop/Tablet) */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 bg-gray-50/50 dark:bg-gray-900/50">
+        {/* Desktop/Tablet: 7-column degree alignment */}
+        <div className="hidden sm:block">
+          {gridLayout.map((row, rIdx) => (
+            <div key={rIdx} className="grid grid-cols-7 gap-3 mb-8 items-start">
+              {row.map((group, cIdx) => (
+                <div key={cIdx} className="flex flex-col gap-2">
+                  {group?.map(chord => renderChordButton(chord))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* Mobile: Simple 4-column tiling */}
+        <div className="sm:hidden grid grid-cols-4 gap-2">
+          {palette.map(chord => renderChordButton(chord))}
         </div>
       </div>
       
-      <div className="p-2 bg-gray-50 dark:bg-gray-800/50 text-[10px] text-gray-400 text-center italic border-t border-gray-100 dark:border-gray-800">
-        Double-click chord to rename globally • Keyboard 1-7 for first 7 chords
-      </div>
-
       {/* Variation Picker Popup (Hover Actionable) */}
       {variationTarget && (
-        <div className="absolute inset-x-0 bottom-0 z-[120] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 p-4 shadow-2xl animate-slideInUp rounded-b-2xl">
+        <div 
+          onMouseEnter={cancelVariationCloseTimer}
+          onMouseLeave={startVariationCloseTimer}
+          className="absolute inset-x-0 bottom-0 z-[120] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 p-4 shadow-2xl animate-slideInUp rounded-b-2xl"
+        >
           <div className="flex justify-between items-center mb-3">
             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tracking-widest">Constructing with root {variationTarget.charAt(0).toUpperCase() + (variationTarget.charAt(1) === '#' ? '#' : variationTarget.charAt(1) === 'b' ? 'b' : '')}</span>
             <button title="Close" onClick={() => setVariationTarget(null)} className="text-gray-400 hover:text-red-500"><i className="fa-solid fa-xmark"></i></button>
@@ -494,7 +569,7 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
                   <div className="flex flex-wrap gap-1.5">
                     {ADV_EXTENSIONS.map(ext => (
                       <button key={ext} onClick={() => buildAndInsert(variationTarget, ext)} className="px-2.5 py-1 text-xs font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded hover:bg-blue-100">
-                        {ext}
+                        {ext || 'Base'}
                       </button>
                     ))}
                   </div>
