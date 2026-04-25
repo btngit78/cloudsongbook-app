@@ -330,7 +330,7 @@ const SongViewer: React.FC<SongViewerProps> = ({
               
                   if (allIdsInBody.length === 0) {
                       if (window.confirm(`No YouTube video link found.\n\nSearch YouTube for "${song.title}"?`)) {
-                          window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(song.title + ' ' + song.authors)}`, '_blank');
+                          window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(song.title)}`, '_blank');
                       }
                       return;
                   }

@@ -327,7 +327,7 @@ const ChordAssistantModal: React.FC<ChordAssistantModalProps> = ({ songKey, song
     clickTimeoutRef.current = window.setTimeout(() => {
       performAction(() => onInsert(chord));
       clickTimeoutRef.current = null;
-    }, 200);
+    }, 400);
   };
 
   const startVariationCloseTimer = () => {
