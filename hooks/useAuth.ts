@@ -36,6 +36,7 @@ export const useAuth = () => {
 
       const syncedUser = await dbService.syncUser(userAuthData);
       setUser(syncedUser);
+      dbService.updateUserSession(syncedUser.id, {}); // Ensure session is active
       localStorage.setItem('cloudsong_user', JSON.stringify(syncedUser));
       return syncedUser;
     } catch (error) {
